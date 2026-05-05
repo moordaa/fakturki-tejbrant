@@ -72,7 +72,10 @@ else:
             if cp == "666": st.snow()
 
             col1, col2, col3 = st.columns(3)
-            kwota = col1.number_input("💰 Kwota BRUTTO (zł)", min_value=0.0, step=0.01, format="%.2f")
+            
+            # ZMIANA: Możliwość wyboru "?" dla kwoty
+            brak_kwoty = col1.checkbox("Brak kwoty (?)")
+            kwota = col1.number_input("💰 Kwota BRUTTO (zł)", min_value=0.0, step=0.01, format="%.2f", disabled=brak_kwoty)
             
             brak_daty = col2.checkbox("Brak daty (?)")
             data_zak = col2.date_input("📅 Data zakupu", datetime.now(), disabled=brak_daty)
@@ -83,9 +86,10 @@ else:
             c1, c2, c3 = st.columns(3)
             typ_sklepu = c1.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
             
-            # DODANO: Przelew do listy
             metoda = c2.selectbox("💳 Metoda płatności", ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"])
-            status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Do opłacenia"])
+            
+            # ZMIANA: Dodano "Przelew" do statusu płatności
+            status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Do opłacenia", "Przelew"])
 
             st.divider()
             c4, c5, c6 = st.columns(3)
@@ -112,7 +116,7 @@ else:
                 foto = st.camera_input("Zrób zdjęcie")
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
-                if sklep and kwota > 0:
+                if sklep and (brak_kwoty or kwota > 0):
                     url_zdj = ""
                     
                     dok_bytes = None
@@ -135,6 +139,9 @@ else:
                             supabase.storage.from_("faktury_zdjecia").upload(dok_nazwa, dok_bytes, {"content-type": dok_mime})
                             url_zdj = supabase.storage.from_("faktury_zdjecia").get_public_url(dok_nazwa)
 
+                    # Obsługa znaku zapytania dla kwoty i daty
+                    kwota_val = "?" if brak_kwoty else kwota
+                    
                     if brak_daty:
                         data_zak_str = "?"
                         miesiac_rok = datetime.now().strftime("%Y-%m")
@@ -143,7 +150,7 @@ else:
                         miesiac_rok = data_zak.strftime("%Y-%m")
 
                     supabase.table("wydatki").insert({
-                        "sklep": sklep, "kwota": kwota, "data_zakupu": data_zak_str,
+                        "sklep": sklep, "kwota": kwota_val, "data_zakupu": data_zak_str,
                         "rodzaj_dokumentu": rodzaj_doc, "typ_sklepu": typ_sklepu, 
                         "metoda_platnosci": metoda, "status": status,
                         "odbiorca": odbiorca, "platnik": platnik, "zrodlo_srodkow": zrodlo,
@@ -196,7 +203,6 @@ else:
                             else:
                                 st.image(url_dok, use_container_width=True)
                     
-                    # --- PRZYCISKI AKCJI ---
                     st.divider()
                     col_btn1, col_btn2, col_btn3 = st.columns([1,1,2])
                     
@@ -219,7 +225,11 @@ else:
                         e_col1, e_col2 = st.columns(2)
                         
                         nowy_sklep = e_col1.text_input("Sklep", value=r['sklep'], key=f"e_sklep_{r['id']}")
-                        nowa_kwota = e_col2.number_input("Kwota", value=float(r['kwota']), min_value=0.0, step=0.01, key=f"e_kwota_{r['id']}")
+                        
+                        # Edycja kwoty z obsługą znaku zapytania
+                        stara_kwota = 0.0 if r['kwota'] == "?" else float(r['kwota'])
+                        nowa_kwota_str = e_col2.text_input("Kwota (wpisz liczbę lub '?')", value=str(r['kwota']), key=f"e_kwota_{r['id']}")
+                        
                         nowa_data = e_col1.text_input("Data zakupu (lub '?')", value=r['data_zakupu'], key=f"e_data_{r['id']}")
                         
                         def get_index(opcje, wartosc):
@@ -228,17 +238,16 @@ else:
                         opcje_zrodlo = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
                         nowe_zrodlo = e_col2.selectbox("Skąd środki?", opcje_zrodlo, index=get_index(opcje_zrodlo, r.get('zrodlo_srodkow')), key=f"e_zrodlo_{r['id']}")
                         
-                        # DODANO: Przelew do edycji
                         opcje_metoda = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
                         nowa_metoda = e_col1.selectbox("Metoda płatności", opcje_metoda, index=get_index(opcje_metoda, r.get('metoda_platnosci')), key=f"e_metoda_{r['id']}")
                         
-                        opcje_status = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅"]
+                        opcje_status = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
                         nowy_status = e_col2.selectbox("Status", opcje_status, index=get_index(opcje_status, r.get('status')), key=f"e_status_{r['id']}")
                         
                         if st.button("💾 Zapisz zmiany", type="primary", key=f"e_zapisz_{r['id']}"):
                             supabase.table("wydatki").update({
                                 "sklep": nowy_sklep,
-                                "kwota": nowa_kwota,
+                                "kwota": nowa_kwota_str,
                                 "data_zakupu": nowa_data,
                                 "zrodlo_srodkow": nowe_zrodlo,
                                 "metoda_platnosci": nowa_metoda,
@@ -308,6 +317,8 @@ else:
                 df_filtered = df_filtered[df_filtered['data_zakupu'] == str(f_data)]
                 
             if f_kwota > 0:
+                # Filtracja kwoty z obsługą znaku zapytania
+                df_filtered = df_filtered[df_filtered['kwota'] != "?"]
                 df_filtered = df_filtered[(df_filtered['kwota'].astype(float) >= f_kwota - 30) & (df_filtered['kwota'].astype(float) <= f_kwota + 30)]
                 
             if f_sklep:
@@ -329,14 +340,18 @@ else:
                 st.warning("Brak wyników dla podanych filtrów wyszukiwania.")
             else:
                 m1, m2, m3 = st.columns(3)
-                m1.metric("Suma całkowita (widoczna)", f"{df_filtered['kwota'].astype(float).sum():.2f} zł")
                 
-                ksef_sum = df_filtered[df_filtered['rodzaj_dokumentu'] == 'KSeF']['kwota'].astype(float).sum()
+                # Sumowanie tylko wartości liczbowych
+                suma_widoczna = df_filtered[df_filtered['kwota'] != "?"]['kwota'].astype(float).sum()
+                m1.metric("Suma całkowita (widoczna)", f"{suma_widoczna:.2f} zł")
+                
+                ksef_sum = df_filtered[(df_filtered['rodzaj_dokumentu'] == 'KSeF') & (df_filtered['kwota'] != "?")]['kwota'].astype(float).sum()
                 m2.metric("W tym KSeF", f"{ksef_sum:.2f} zł")
                 
                 do_zwrotu_df = df_filtered[
                     (df_filtered['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & 
-                    (df_filtered['status'] != 'Rozliczone z Marzeną ✅')
+                    (df_filtered['status'] != 'Rozliczone z Marzeną ✅') &
+                    (df_filtered['kwota'] != "?")
                 ]
                 pryw_sum = do_zwrotu_df['kwota'].astype(float).sum()
                 m3.metric("Do zwrotu (Pryw./Gotówka)", f"{pryw_sum:.2f} zł")
@@ -440,7 +455,7 @@ else:
         with col1:
             st.success("**📷 1. Załączanie dokumentów**\n\nMożesz wgrać zdjęcie paragonu z dysku, zrobić je bezpośrednio telefonem (ikonka aparatu) lub dodać oryginalny plik PDF od dostawcy/sklepu.")
             
-            st.info("**🤔 2. Brak daty i KSeF**\n\nJeśli paragon jest nieczytelny lub wyblakły, zaznacz 'Brak daty (?)'. Z kolei dla e-faktur ustrukturyzowanych wybierz 'KSeF' w rodzaju dokumentu.")
+            st.info("**🤔 2. Brak daty, kwoty i KSeF**\n\nJeśli paragon jest nieczytelny lub nie znasz ostatecznej sumy, zaznacz 'Brak daty/kwoty (?)'. Z kolei dla e-faktur ustrukturyzowanych wybierz 'KSeF' w rodzaju dokumentu.")
 
         with col2:
             st.warning("**💸 3. Zwroty pieniędzy**\n\nWyłożyłeś swoje pieniądze? Zaznacz 'Karta prywatna' lub 'Gotówka'. System sam podliczy, ile firma musi Ci oddać, i **automatycznie odejmie** to, co już zostało w pełni rozliczone z Marzeną!")
