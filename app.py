@@ -37,6 +37,7 @@ if not st.session_state.zalogowany:
                 else:
                     st.error("Błędny login lub hasło!")
 else:
+    # --- MENU BOCZNE ---
     with st.sidebar:
         st.success(f"Zalogowano: **{st.session_state.uzytkownik}**")
         st.header("fakturki-tejbrant")
@@ -58,8 +59,10 @@ else:
         with st.container(border=True):
             sklep = st.text_input("🏪 Sklep / Dostawca")
             col1, col2, col3 = st.columns(3)
+            
             brak_kwoty = col1.checkbox("Brak kwoty (?)")
             kwota = col1.number_input("💰 Kwota BRUTTO (zł)", min_value=0.0, step=0.01, format="%.2f", disabled=brak_kwoty)
+            
             brak_daty = col2.checkbox("Brak daty (?)")
             data_zak = col2.date_input("📅 Data zakupu", datetime.now(), disabled=brak_daty)
             rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "?"])
@@ -115,23 +118,25 @@ else:
                         st.error(f"Błąd bazy danych: {e}")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI
+    # ZAKŁADKA: MOJE WYDATKI (PRZYWRÓCONA PEŁNA EDYCJA)
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
-            st.title("📂 Wszystkie wydatki (Admin)")
+            st.title("📂 Wszystkie wydatki (Widok Admina)")
             res = supabase.table("wydatki").select("*").order("id", desc=True).execute()
         else:
-            st.title("📂 Twoja historia")
+            st.title("📂 Twoja historia zakupów")
             res = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).order("id", desc=True).execute()
         
         if res.data:
             for r in res.data:
                 rozl = (r.get('status') == "Rozliczone z Marzeną ✅")
                 with st.container(border=True):
-                    if rozl: st.success("✅ **ROZLICZONE Z MARZENĄ**")
+                    if rozl: st.success("✅ **TRANSAKCJA W PEŁNI ROZLICZONA Z MARZENĄ**")
                     c1, c2, c3 = st.columns([2,1,1])
-                    c1.markdown(f"### {r['sklep']}")
+                    c1.markdown(f"### {'✅ ' if rozl else '🛒 '}{r['sklep']}")
+                    autor = f" | 👤 **Dodał(a): {r['zgloszone_przez']}**" if st.session_state.rola == "admin" else ""
+                    c1.caption(f"Dokument: {r['rodzaj_dokumentu']} | Projekt: {r['uwagi'].split('|')[0]}{autor} | Status: **{r['status']}**")
                     kw_pokaz = "?" if r['kwota'] == 0 else f"{r['kwota']}"
                     c2.subheader(f"{kw_pokaz} zł")
                     c3.write(f"📅 {r['data_zakupu']}")
@@ -153,88 +158,124 @@ else:
                             supabase.table("wydatki").update({"status": "Zapłacone"}).eq("id", r['id']).execute(); st.rerun()
                             
                     with st.expander("✏️ Edytuj WSZYSTKIE pola"):
+                        def g_idx(opt, val): return opt.index(val) if val in opt else 0
                         ee1, ee2 = st.columns(2)
                         n_sklep = ee1.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
                         n_kw_s = ee2.text_input("Kwota (liczba lub ?)", value="?" if r['kwota'] == 0 else str(r['kwota']), key=f"ek_{r['id']}")
-                        if st.button("💾 Zapisz", key=f"eb_{r['id']}", type="primary"):
-                            n_kw_v = 0.0 if n_kw_s == "?" else float(n_kw_s.replace(",", "."))
-                            supabase.table("wydatki").update({"sklep": n_sklep, "kwota": n_kw_v}).eq("id", r['id']).execute(); st.rerun()
+                        
+                        ee3, ee4, ee5 = st.columns(3)
+                        n_data = ee3.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                        o_doc = ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "?"]
+                        n_doc = ee4.selectbox("Rodzaj dok.", o_doc, index=g_idx(o_doc, r.get('rodzaj_dokumentu')), key=f"erd_{r['id']}")
+                        o_typ = ["Stacjonarny", "Internetowy"]
+                        n_typ = ee5.selectbox("Miejsce", o_typ, index=g_idx(o_typ, r.get('typ_sklepu')), key=f"et_{r['id']}")
+                        
+                        ee6, ee7, ee8 = st.columns(3)
+                        o_met = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
+                        n_met = ee6.selectbox("Metoda", o_met, index=g_idx(o_met, r.get('metoda_platnosci')), key=f"em_{r['id']}")
+                        o_st = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
+                        n_st = ee7.selectbox("Status", o_st, index=g_idx(o_st, r.get('status')), key=f"est_{r['id']}")
+                        o_zr = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                        n_zr = ee8.selectbox("Źródło", o_zr, index=g_idx(o_zr, r.get('zrodlo_srodkow')), key=f"ez_{r['id']}")
+
+                        n_uwag = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"euw_{r['id']}")
+                        
+                        if st.button("💾 Zapisz zmiany", key=f"eb_{r['id']}", type="primary", use_container_width=True):
+                            try:
+                                n_kw_v = 0.0 if n_kw_s == "?" else float(n_kw_s.replace(",", "."))
+                                supabase.table("wydatki").update({
+                                    "sklep": n_sklep, "kwota": n_kw_v, "data_zakupu": n_data,
+                                    "rodzaj_dokumentu": n_doc, "typ_sklepu": n_typ,
+                                    "metoda_platnosci": n_met, "status": n_st, "zrodlo_srodkow": n_zr,
+                                    "uwagi": n_uwag
+                                }).eq("id", r['id']).execute()
+                                st.success("Zapisano!")
+                                time.sleep(0.5); st.rerun()
+                            except: st.error("Błąd zapisu! Sprawdź kwotę.")
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY
+    # ZAKŁADKA: RAPORTY (PRZYWRÓCONA WYSZUKIWARKA I PDF)
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
         st.title("📊 Wyszukiwarka i Raporty")
-        res_all = supabase.table("wydatki").select("*").execute()
+        if st.session_state.rola == "admin": res_all = supabase.table("wydatki").select("*").execute()
+        else: res_all = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).execute()
+            
         if res_all.data:
             df = pd.DataFrame(res_all.data)
+            df['kwota'] = df['kwota'].fillna(0).astype(float)
+            
             with st.expander("🔍 FILTRY WYSZUKIWANIA", expanded=True):
-                c1, c2, c3 = st.columns(3)
-                f_kw = c1.number_input("Kwota (±30 zł)", min_value=0.0)
+                c1, c2, c3, c4 = st.columns(4)
+                d_lat = sorted(list(set([str(d)[:4] for d in df['data_zakupu'] if len(str(d))>=4])), reverse=True)
+                f_rok = c1.selectbox("Rok", ["Wszystkie"] + d_lat)
+                f_mies = c2.selectbox("Miesiąc", ["Wszystkie"] + [f"{i:02d}" for i in range(1,13)])
+                f_kw = c4.number_input("Kwota (±30 zł)", min_value=0.0)
+                
                 d_sk = sorted(df['sklep'].astype(str).unique().tolist())
                 f_sk = st.multiselect("Sklepy", d_sk)
-            
-            df_f = df.copy()
-            if f_kw > 0: df_f = df_f[(df_f['kwota'].astype(float) >= f_kw - 30) & (df_f['kwota'].astype(float) <= f_kw + 30)]
-            if f_sk: df_f = df_f[df_f['sklep'].isin(f_sk)]
+                d_st = df['status'].unique().tolist()
+                f_st = st.multiselect("Statusy", d_st)
 
-            st.metric("Suma", f"{df_f['kwota'].astype(float).sum():.2f} zł")
-            st.dataframe(df_f, use_container_width=True)
+            df_f = df.copy()
+            if f_rok != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.startswith(f_rok)]
+            if f_mies != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str[5:7] == f_mies]
+            if f_kw > 0: df_f = df_f[(df_f['kwota'] >= f_kw - 30) & (df_f['kwota'] <= f_kw + 30)]
+            if f_sk: df_f = df_f[df_f['sklep'].isin(f_sk)]
+            if f_st: df_f = df_f[df_f['status'].isin(f_st)]
+
+            st.subheader(f"Wyniki: {len(df_f)}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Suma widoczna", f"{df_f['kwota'].sum():.2f} zł")
+            
+            # Inteligentne "Do zwrotu"
+            do_zw = df_f[(df_f['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & (df_f['status'] != 'Rozliczone z Marzeną ✅')]
+            m3.metric("Do zwrotu (Pryw/Got)", f"{do_zw['kwota'].sum():.2f} zł")
+            
+            st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez', 'uwagi']], use_container_width=True)
+            
+            col_e1, col_e2 = st.columns(2)
             csv = '\ufeff'.encode('utf8') + df_f.to_csv(index=False, sep=';').encode('utf-8')
-            st.download_button("📊 Pobierz EXCEL (CSV)", data=csv, file_name="raport.csv", mime="text/csv")
+            col_e1.download_button("📊 Pobierz EXCEL (CSV)", data=csv, file_name="raport.csv", mime="text/csv", use_container_width=True)
+            html = f"<html><body><h2>Raport Wydatków</h2>{df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']].to_html(index=False)}</body></html>"
+            col_e2.download_button("📄 Pobierz PDF (Do druku)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html", use_container_width=True)
 
     # =========================================================================
-    # ZAKŁADKA: ZARZĄDZANIE KONTAMI (POPRAWIONA)
+    # ZAKŁADKA: ZARZĄDZANIE KONTAMI (PRZYWRÓCONA)
     # =========================================================================
     elif menu == "👥 Zarządzanie Kontami":
         st.title("👥 Zarządzanie kontami użytkowników")
-        
-        # 1. Formularz dodawania
         with st.container(border=True):
             st.subheader("➕ Dodaj nowe konto")
             cc1, cc2, cc3 = st.columns(3)
-            new_log = cc1.text_input("Login (małymi literami)")
+            new_log = cc1.text_input("Login")
             new_pass = cc2.text_input("Hasło")
             new_role = cc3.selectbox("Rola", ["użytkownik", "admin"])
-            
-            if st.button("Zapisz nowe konto", type="primary"):
+            if st.button("Zapisz konto", type="primary"):
                 if new_log and new_pass:
-                    supabase.table("fakturki_konta").insert({
-                        "login": new_log.strip().lower(),
-                        "haslo": new_pass.strip(),
-                        "rola": new_role
-                    }).execute()
-                    st.success(f"Dodano konto: {new_log}")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("Uzupełnij login i hasło!")
+                    supabase.table("fakturki_konta").insert({"login": new_log.strip().lower(), "haslo": new_pass.strip(), "rola": new_role}).execute()
+                    st.success("Dodano!"); time.sleep(1); st.rerun()
 
         st.divider()
-        st.subheader("📋 Lista kont w systemie")
-        
-        # 2. Wyświetlanie listy wszystkich kont
         res_p = supabase.table("fakturki_konta").select("*").order("login").execute()
-        
-        if res_p.data:
-            for p in res_p.data:
-                with st.container(border=True):
-                    col_info, col_btn = st.columns([4, 1])
-                    with col_info:
-                        st.markdown(f"👤 Login: **{p['login']}** | 🔑 Hasło: `{p['haslo']}` | 🛡️ Rola: `{p['rola']}`")
-                    
-                    with col_btn:
-                        # Zabezpieczenie: Emil nie może usunąć sam siebie
-                        if p['login'].lower() != "emil":
-                            if st.button("Usuń", key=f"du_{p['login']}", use_container_width=True):
-                                supabase.table("fakturki_konta").delete().eq("login", p['login']).execute()
-                                st.rerun()
-                        else:
-                            st.caption("Konto główne")
+        for p in res_p.data:
+            with st.container(border=True):
+                col_info, col_btn = st.columns([4, 1])
+                col_info.markdown(f"👤 Login: **{p['login']}** | 🔑 Hasło: `{p['haslo']}` | 🛡️ Rola: `{p['rola']}`")
+                if p['login'].lower() != "emil":
+                    if col_btn.button("Usuń", key=f"du_{p['login']}", use_container_width=True):
+                        supabase.table("fakturki_konta").delete().eq("login", p['login']).execute(); st.rerun()
 
     # =========================================================================
     # ZAKŁADKA: INSTRUKCJA
     # =========================================================================
     elif menu == "📖 Instrukcja":
-        st.title("📖 Instrukcja")
-        st.info("Jako Admin możesz tutaj dodawać i usuwać konta oraz widzieć hasła użytkowników.")
+        st.title("📖 Centrum Pomocy: Fakturki-Tejbrant")
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.success("**📷 1. Dokumenty**\nWgrywaj zdjęcia, pliki PDF lub rób fotki aparatem.")
+            st.info("**🤔 2. Brak danych**\nJeśli nie znasz kwoty/daty, zaznacz '?'. W bazie zapisze się 0.0, ale aplikacja pokaże to jako znak zapytania.")
+        with col2:
+            st.warning("**💸 3. Zwroty**\nKwoty 'Do zwrotu' (Karta pryw./Gotówka) znikają z licznika automatycznie po kliknięciu 'Rozliczone z Marzeną'.")
+            st.error("**🤝 4. Edycja**\nMożesz edytować każde pole dowolnego wydatku w zakładce 'Moje Wydatki'.")
