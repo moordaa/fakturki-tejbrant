@@ -3,10 +3,12 @@ from supabase import create_client, Client
 from datetime import datetime
 import pandas as pd
 import time
+import urllib.parse
 
 # --- KONFIGURACJA ---
+# URL jest poprawny dla Twojego projektu hdmptdcuqxqutfgrgmrj
 URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
-KEY = "TU_WKLEJ_SWOJ_KLUCZ_API" 
+KEY = "sb_publishable_aPIiW1rzHtM3vGcVaUuN-w_R9MadPTt"
 
 supabase: Client = create_client(URL, KEY)
 
@@ -27,7 +29,7 @@ if not st.session_state.zalogowany:
             l = st.text_input("Login")
             p = st.text_input("Hasło", type="password")
             if st.button("ZALOGUJ", use_container_width=True, type="primary"):
-                # ZMIANA: Szukamy użytkownika w nowej tabeli 'fakturki_konta'
+                # Szukamy użytkownika w nowej tabeli 'fakturki_konta'
                 res = supabase.table("fakturki_konta").select("*").eq("login", l).eq("haslo", p).execute()
                 if res.data:
                     st.session_state.zalogowany = True
@@ -201,7 +203,6 @@ else:
             
             if st.button("Utwórz konto", type="primary"):
                 if n_log and n_has:
-                    # ZMIANA: Zapisujemy do nowej tabeli fakturki_konta
                     supabase.table("fakturki_konta").insert({"login": n_log, "haslo": n_has, "rola": n_rol}).execute()
                     st.success(f"Dodano użytkownika: {n_log}!")
                     time.sleep(1)
@@ -211,7 +212,6 @@ else:
 
         st.divider()
         st.subheader("📋 Lista aktywnych kont")
-        # ZMIANA: Pobieramy listę z nowej tabeli
         res_p = supabase.table("fakturki_konta").select("*").order("login").execute()
         for p in res_p.data:
             with st.container(border=True):
@@ -221,7 +221,6 @@ else:
                 
                 if p['login'].lower() != "szef":
                     if col_btn.button("🗑️ Usuń", key=f"del_user_{p['login']}", type="secondary"):
-                        # ZMIANA: Usuwamy z nowej tabeli
                         supabase.table("fakturki_konta").delete().eq("login", p['login']).execute()
                         st.rerun()
 
@@ -232,9 +231,8 @@ else:
         st.title("📖 Pomoc fakturki-tejbrant")
         st.info("Jak poprawnie rozliczać zakupy?")
         st.markdown("""
-        1.  **Zdjęcie dokumentu**: Zawsze rób zdjęcie paragonu lub faktury papierowej.
-        2.  **Oznaczenie KSeF**: Jeśli faktura jest w systemie KSeF, zaznacz to.
-        3.  **Karta prywatna**: Jeśli wyłożyłeś własne pieniądze, wybierz 'Karta prywatna'. System podliczy to do zwrotu.
-        4.  **Raporty**: Na koniec miesiąca pobierz raport CSV i wyślij do księgowości.
+        1. **Zdjęcie dokumentu**: Zawsze rób zdjęcie paragonu lub faktury papierowej.
+        2. **Oznaczenie KSeF**: Jeśli faktura jest w systemie KSeF, zaznacz to.
+        3. **Karta prywatna**: Jeśli wyłożyłeś własne pieniądze, wybierz 'Karta prywatna'. System podliczy to do zwrotu.
+        4. **Raporty**: Na koniec miesiąca pobierz raport CSV i wyślij do księgowości.
         """)
-    
