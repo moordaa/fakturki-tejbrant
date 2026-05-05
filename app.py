@@ -115,11 +115,9 @@ else:
                         time.sleep(1); st.rerun()
                     except Exception as e:
                         st.error(f"Błąd bazy danych: {e}")
-                else:
-                    st.error("Uzupełnij nazwę sklepu!")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI (PEŁNA EDYCJA)
+    # ZAKŁADKA: MOJE WYDATKI
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
@@ -153,54 +151,88 @@ else:
                         if col_b2.button("✅ Rozliczone z Marzeną", key=f"r_{r['id']}", type="primary"):
                             supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute(); st.rerun()
                     else:
-                        if col_b2.button("↩️ Cofnij", key=f"c_{r['id']}"):
+                        if col_b2.button("↩️ Cofnij rozliczenie", key=f"c_{r['id']}"):
                             supabase.table("wydatki").update({"status": "Zapłacone"}).eq("id", r['id']).execute(); st.rerun()
                             
-                    with st.expander("✏️ Edytuj wydatek"):
-                        st.caption("Zmień wybrane pola i zapisz.")
+                    with st.expander("✏️ Edytuj WSZYSTKIE pola"):
+                        def g_idx(opt, val): return opt.index(val) if val in opt else 0
                         ee1, ee2 = st.columns(2)
-                        
                         n_sklep = ee1.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
                         n_kw_s = ee2.text_input("Kwota (liczba lub ?)", value="?" if r['kwota'] == 0 else str(r['kwota']), key=f"ek_{r['id']}")
-                        n_data = ee1.text_input("Data zakupu (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
                         
-                        def g_idx(opt, val): return opt.index(val) if val in opt else 0
+                        ee3, ee4, ee5 = st.columns(3)
+                        n_data = ee3.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                        o_doc = ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "?"]
+                        n_doc = ee4.selectbox("Rodzaj dok.", o_doc, index=g_idx(o_doc, r.get('rodzaj_dokumentu')), key=f"erd_{r['id']}")
+                        o_typ = ["Stacjonarny", "Internetowy"]
+                        n_typ = ee5.selectbox("Miejsce", o_typ, index=g_idx(o_typ, r.get('typ_sklepu')), key=f"et_{r['id']}")
                         
-                        o_zr = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
-                        n_zr = ee2.selectbox("Skąd środki?", o_zr, index=g_idx(o_zr, r.get('zrodlo_srodkow')), key=f"ez_{r['id']}")
-                        
+                        ee6, ee7, ee8 = st.columns(3)
                         o_met = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
-                        n_met = ee1.selectbox("Metoda płatności", o_met, index=g_idx(o_met, r.get('metoda_platnosci')), key=f"em_{r['id']}")
-                        
+                        n_met = ee6.selectbox("Metoda", o_met, index=g_idx(o_met, r.get('metoda_platnosci')), key=f"em_{r['id']}")
                         o_st = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
-                        n_st = ee2.selectbox("Status płatności", o_st, index=g_idx(o_st, r.get('status')), key=f"est_{r['id']}")
+                        n_st = ee7.selectbox("Status", o_st, index=g_idx(o_st, r.get('status')), key=f"est_{r['id']}")
+                        o_zr = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                        n_zr = ee8.selectbox("Źródło", o_zr, index=g_idx(o_zr, r.get('zrodlo_srodkow')), key=f"ez_{r['id']}")
+
+                        n_uwag = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"euw_{r['id']}")
                         
-                        if st.button("💾 Zapisz zmiany", key=f"eb_{r['id']}", type="primary", use_container_width=True):
+                        if st.button("💾 Zapisz zmiany", key=f"eb_{r['id']}", type="primary"):
                             n_kw_v = 0.0 if n_kw_s == "?" else float(n_kw_s.replace(",", "."))
                             supabase.table("wydatki").update({
-                                "sklep": n_sklep, 
-                                "kwota": n_kw_v, 
-                                "data_zakupu": n_data,
-                                "zrodlo_srodkow": n_zr,
-                                "metoda_platnosci": n_met,
-                                "status": n_st
-                            }).eq("id", r['id']).execute()
-                            st.success("Zaktualizowano!")
-                            time.sleep(0.5); st.rerun()
+                                "sklep": n_sklep, "kwota": n_kw_v, "data_zakupu": n_data,
+                                "rodzaj_dokumentu": n_doc, "typ_sklepu": n_typ,
+                                "metoda_platnosci": n_met, "status": n_st, "zrodlo_srodkow": n_zr,
+                                "uwagi": n_uwag
+                            }).eq("id", r['id']).execute(); st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY
+    # ZAKŁADKA: RAPORTY (PRZYWRÓCONA WYSZUKIWARKA I PDF)
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
-        st.title("📊 Raporty")
-        res_all = supabase.table("wydatki").select("*").execute()
+        st.title("📊 Wyszukiwarka i Raporty")
+        if st.session_state.rola == "admin": res_all = supabase.table("wydatki").select("*").execute()
+        else: res_all = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).execute()
+            
         if res_all.data:
             df = pd.DataFrame(res_all.data)
-            df['kwota'] = df['kwota'].fillna(0).astype(float)
-            st.metric("Suma całkowita", f"{df['kwota'].sum():.2f} zł")
-            st.dataframe(df[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']], use_container_width=True)
-            csv = '\ufeff'.encode('utf8') + df.to_csv(index=False, sep=';').encode('utf-8')
-            st.download_button("📊 Pobierz EXCEL", data=csv, file_name="raport.csv")
+            
+            with st.expander("🔍 FILTRY WYSZUKIWANIA", expanded=True):
+                c1, c2, c3, c4 = st.columns(4)
+                d_lat = sorted(list(set([str(d)[:4] for d in df['data_zakupu'] if len(str(d))>=4])), reverse=True)
+                f_rok = c1.selectbox("Rok", ["Wszystkie"] + d_lat)
+                f_mies = c2.selectbox("Miesiąc", ["Wszystkie"] + [f"{i:02d}" for i in range(1,13)])
+                f_kw = c4.number_input("Kwota (±30 zł)", min_value=0.0)
+                
+                d_sk = sorted(df['sklep'].astype(str).unique().tolist())
+                f_sk = st.multiselect("Sklepy", d_sk)
+                d_st = df['status'].unique().tolist()
+                f_st = st.multiselect("Statusy", d_st)
+
+            # Filtrowanie
+            df_f = df.copy()
+            if f_rok != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.startswith(f_rok)]
+            if f_mies != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str[5:7] == f_mies]
+            if f_kw > 0: df_f = df_f[(df_f['kwota'].astype(float) >= f_kw - 30) & (df_f['kwota'].astype(float) <= f_kw + 30)]
+            if f_sk: df_f = df_f[df_f['sklep'].isin(f_sk)]
+            if f_st: df_f = df_f[df_f['status'].isin(f_st)]
+
+            st.subheader(f"Wyniki: {len(df_f)}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Suma widoczna", f"{df_f['kwota'].astype(float).sum():.2f} zł")
+            do_zw = df_f[(df_f['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & (df_f['status'] != 'Rozliczone z Marzeną ✅')]
+            m3.metric("Do zwrotu", f"{do_zw['kwota'].astype(float).sum():.2f} zł")
+            
+            st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez', 'uwagi']], use_container_width=True)
+            
+            # Eksport
+            col_e1, col_e2 = st.columns(2)
+            csv = '\ufeff'.encode('utf8') + df_f.to_csv(index=False, sep=';').encode('utf-8')
+            col_e1.download_button("📊 Pobierz EXCEL (CSV)", data=csv, file_name="raport.csv", mime="text/csv", use_container_width=True)
+            
+            # HTML dla PDF
+            html = f"<html><body><h2>Raport</h2>{df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']].to_html()}</body></html>"
+            col_e2.download_button("📄 Pobierz PDF (Do druku)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html", use_container_width=True)
 
     # =========================================================================
     # ZAKŁADKA: KONTA
@@ -221,4 +253,4 @@ else:
     # =========================================================================
     elif menu == "📖 Instrukcja":
         st.title("📖 Instrukcja")
-        st.info("System pozwala na edycję wszystkich pól dokumentu. Znak zapytania w kwocie zapisuje technicznie 0.0 zł.")
+        st.info("System przywrócił pełną wyszukiwarkę w raportach. Kwoty 0.0 traktowane są jako znak zapytania.")
