@@ -83,7 +83,8 @@ else:
             c1, c2, c3 = st.columns(3)
             typ_sklepu = c1.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
             
-            metoda = c2.selectbox("💳 Metoda płatności", ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma"])
+            # DODANO: Przelew do listy
+            metoda = c2.selectbox("💳 Metoda płatności", ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"])
             status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Do opłacenia"])
 
             st.divider()
@@ -204,7 +205,6 @@ else:
                             supabase.table("wydatki").delete().eq("id", r['id']).execute()
                             st.rerun()
                             
-                    # ZMIANA: Opcja cofnięcia rozliczenia
                     if not rozliczone:
                         if col_btn2.button("✅ Rozliczone z Marzeną", key=f"rozl_{r['id']}", type="primary"):
                             supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute()
@@ -228,7 +228,8 @@ else:
                         opcje_zrodlo = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
                         nowe_zrodlo = e_col2.selectbox("Skąd środki?", opcje_zrodlo, index=get_index(opcje_zrodlo, r.get('zrodlo_srodkow')), key=f"e_zrodlo_{r['id']}")
                         
-                        opcje_metoda = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma"]
+                        # DODANO: Przelew do edycji
+                        opcje_metoda = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
                         nowa_metoda = e_col1.selectbox("Metoda płatności", opcje_metoda, index=get_index(opcje_metoda, r.get('metoda_platnosci')), key=f"e_metoda_{r['id']}")
                         
                         opcje_status = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅"]
@@ -428,7 +429,7 @@ else:
                         st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: INSTRUKCJA (ZUPEŁNIE NOWA ODSŁONA)
+    # ZAKŁADKA: INSTRUKCJA
     # =========================================================================
     elif menu == "📖 Instrukcja":
         st.title("📖 Centrum Pomocy: Fakturki-Tejbrant")
