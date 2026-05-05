@@ -6,8 +6,8 @@ import time
 import urllib.parse
 
 # --- KONFIGURACJA ---
-# URL jest poprawny dla Twojego projektu hdmptdcuqxqutfgrgmrj
 URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
+# Wklejony Twój klucz:
 KEY = "sb_publishable_aPIiW1rzHtM3vGcVaUuN-w_R9MadPTt"
 
 supabase: Client = create_client(URL, KEY)
@@ -29,7 +29,7 @@ if not st.session_state.zalogowany:
             l = st.text_input("Login")
             p = st.text_input("Hasło", type="password")
             if st.button("ZALOGUJ", use_container_width=True, type="primary"):
-                # Szukamy użytkownika w nowej tabeli 'fakturki_konta'
+                # Szukamy użytkownika w tabeli 'fakturki_konta'
                 res = supabase.table("fakturki_konta").select("*").eq("login", l).eq("haslo", p).execute()
                 if res.data:
                     st.session_state.zalogowany = True
@@ -79,8 +79,10 @@ else:
             st.divider()
             c1, c2, c3 = st.columns(3)
             typ_sklepu = c1.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
-            metoda = c2.selectbox("💳 Metoda płatności", ["Karta", "Gotówka", "Przelew", "Pro-forma", "Pobranie"])
-            status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Pobranie", "Przelew/Proforma", "Rozliczone"])
+            
+            # Nowe opcje:
+            metoda = c2.selectbox("💳 Metoda płatności", ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma"])
+            status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Do opłacenia"])
 
             st.divider()
             c4, c5, c6 = st.columns(3)
@@ -219,6 +221,7 @@ else:
                 rola_w = p.get('rola') or "użytkownik"
                 col_info.markdown(f"👤 Login: **{p['login']}** | 🔑 Hasło: `{p['haslo']}` | 🛡️ Rola: `{rola_w}`")
                 
+                # TUTAJ PODMIEŃ NAZWĘ SWOJEGO KONTA (małymi literami!):
                 if p['login'].lower() != "emil":
                     if col_btn.button("🗑️ Usuń", key=f"del_user_{p['login']}", type="secondary"):
                         supabase.table("fakturki_konta").delete().eq("login", p['login']).execute()
