@@ -7,7 +7,6 @@ import urllib.parse
 
 # --- KONFIGURACJA ---
 URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
-# Wklejony Twój klucz:
 KEY = "sb_publishable_aPIiW1rzHtM3vGcVaUuN-w_R9MadPTt"
 
 supabase: Client = create_client(URL, KEY)
@@ -99,7 +98,6 @@ else:
                             supabase.storage.from_("faktury_zdjecia").upload(d_nazwa, d_bytes)
                             url_zdj = supabase.storage.from_("faktury_zdjecia").get_public_url(d_nazwa)
 
-                    # ROZWIĄZANIE BŁĘDU: Zamiast null wysyłamy 0.0, jeśli wybrano "?"
                     kwota_db = 0.0 if brak_kwoty else kwota
                     data_zak_str = "?" if brak_daty else str(data_zak)
                     miesiac_rok = datetime.now().strftime("%Y-%m") if brak_daty else data_zak.strftime("%Y-%m")
@@ -121,7 +119,7 @@ else:
                     st.error("Uzupełnij nazwę sklepu!")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI
+    # ZAKŁADKA: MOJE WYDATKI (PEŁNA EDYCJA)
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
@@ -138,11 +136,15 @@ else:
                     if rozl: st.success("✅ **ROZLICZONE Z MARZENĄ**")
                     c1, c2, c3 = st.columns([2,1,1])
                     c1.markdown(f"### {r['sklep']}")
-                    # Wyświetlanie 0.0 jako "?"
                     kw_pokaz = "?" if r['kwota'] == 0 else f"{r['kwota']}"
                     c2.subheader(f"{kw_pokaz} zł")
                     c3.write(f"📅 {r['data_zakupu']}")
                     
+                    if r.get('zdjecie_url'):
+                        with st.expander("📎 Zobacz dokument"):
+                            if ".pdf" in r['zdjecie_url'].lower(): st.markdown(f"**[📄 Otwórz PDF]({r['zdjecie_url']})**")
+                            else: st.image(r['zdjecie_url'], use_container_width=True)
+
                     st.divider()
                     col_b1, col_b2, col_b3 = st.columns([1,1,2])
                     if col_b1.button("🗑️ Usuń", key=f"d_{r['id']}"):
@@ -154,12 +156,37 @@ else:
                         if col_b2.button("↩️ Cofnij", key=f"c_{r['id']}"):
                             supabase.table("wydatki").update({"status": "Zapłacone"}).eq("id", r['id']).execute(); st.rerun()
                             
-                    with st.expander("✏️ Edytuj"):
-                        n_sk = st.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
-                        n_kw_s = st.text_input("Kwota (0 lub ? oznacza brak)", value="?" if r['kwota'] == 0 else str(r['kwota']), key=f"ek_{r['id']}")
-                        if st.button("💾 Zapisz", key=f"eb_{r['id']}"):
+                    with st.expander("✏️ Edytuj wydatek"):
+                        st.caption("Zmień wybrane pola i zapisz.")
+                        ee1, ee2 = st.columns(2)
+                        
+                        n_sklep = ee1.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
+                        n_kw_s = ee2.text_input("Kwota (liczba lub ?)", value="?" if r['kwota'] == 0 else str(r['kwota']), key=f"ek_{r['id']}")
+                        n_data = ee1.text_input("Data zakupu (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                        
+                        def g_idx(opt, val): return opt.index(val) if val in opt else 0
+                        
+                        o_zr = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                        n_zr = ee2.selectbox("Skąd środki?", o_zr, index=g_idx(o_zr, r.get('zrodlo_srodkow')), key=f"ez_{r['id']}")
+                        
+                        o_met = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
+                        n_met = ee1.selectbox("Metoda płatności", o_met, index=g_idx(o_met, r.get('metoda_platnosci')), key=f"em_{r['id']}")
+                        
+                        o_st = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
+                        n_st = ee2.selectbox("Status płatności", o_st, index=g_idx(o_st, r.get('status')), key=f"est_{r['id']}")
+                        
+                        if st.button("💾 Zapisz zmiany", key=f"eb_{r['id']}", type="primary", use_container_width=True):
                             n_kw_v = 0.0 if n_kw_s == "?" else float(n_kw_s.replace(",", "."))
-                            supabase.table("wydatki").update({"sklep": n_sk, "kwota": n_kw_v}).eq("id", r['id']).execute(); st.rerun()
+                            supabase.table("wydatki").update({
+                                "sklep": n_sklep, 
+                                "kwota": n_kw_v, 
+                                "data_zakupu": n_data,
+                                "zrodlo_srodkow": n_zr,
+                                "metoda_platnosci": n_met,
+                                "status": n_st
+                            }).eq("id", r['id']).execute()
+                            st.success("Zaktualizowano!")
+                            time.sleep(0.5); st.rerun()
 
     # =========================================================================
     # ZAKŁADKA: RAPORTY
@@ -169,9 +196,8 @@ else:
         res_all = supabase.table("wydatki").select("*").execute()
         if res_all.data:
             df = pd.DataFrame(res_all.data)
-            # Obliczenia: tylko kwoty > 0
-            suma = df['kwota'].sum()
-            st.metric("Suma całkowita", f"{suma:.2f} zł")
+            df['kwota'] = df['kwota'].fillna(0).astype(float)
+            st.metric("Suma całkowita", f"{df['kwota'].sum():.2f} zł")
             st.dataframe(df[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']], use_container_width=True)
             csv = '\ufeff'.encode('utf8') + df.to_csv(index=False, sep=';').encode('utf-8')
             st.download_button("📊 Pobierz EXCEL", data=csv, file_name="raport.csv")
@@ -180,14 +206,19 @@ else:
     # ZAKŁADKA: KONTA
     # =========================================================================
     elif menu == "👥 Zarządzanie Kontami":
-        st.title("👥 Konta")
+        st.title("👥 Zarządzanie kontami")
         res_p = supabase.table("fakturki_konta").select("*").execute()
         for p in res_p.data:
-            st.write(f"👤 {p['login']} ({p['rola']})")
+            with st.container(border=True):
+                ci, cb = st.columns([5, 1])
+                ci.write(f"👤 **{p['login']}** | Rola: {p['rola']}")
+                if p['login'].lower() != "emil":
+                    if cb.button("🗑️", key=f"du_{p['login']}"):
+                        supabase.table("fakturki_konta").delete().eq("login", p['login']).execute(); st.rerun()
 
     # =========================================================================
     # ZAKŁADKA: INSTRUKCJA
     # =========================================================================
     elif menu == "📖 Instrukcja":
         st.title("📖 Instrukcja")
-        st.info("Znak zapytania przy kwocie zapisuje w bazie wartość 0.0 zł, aby nie blokować zapisu.")
+        st.info("System pozwala na edycję wszystkich pól dokumentu. Znak zapytania w kwocie zapisuje technicznie 0.0 zł.")
