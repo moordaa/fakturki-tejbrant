@@ -6,16 +6,13 @@ import time
 import urllib.parse
 
 # --- KONFIGURACJA ---
-# Dane znajdziesz w Supabase: Project Settings -> API
 URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
-KEY = "TU_WKLEJ_SWOJ_KLUCZ_API" 
+KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhkbXB0ZGN1cXhxdXRmZ3JnbXJqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3NzQ2NTksImV4cCI6MjA5MjM1MDY1OX0.ZI18vTCpYloVOdzpZuVHYVH2OwKJMsrQINgaJNl-vho" 
 
 supabase: Client = create_client(URL, KEY)
 
-# Ustawienia strony w przeglądarce
 st.set_page_config(page_title="fakturki-tejbrant", page_icon="🧾", layout="wide")
 
-# Inicjalizacja sesji logowania
 if 'zalogowany' not in st.session_state:
     st.session_state.zalogowany = False
     st.session_state.uzytkownik = ""
@@ -31,7 +28,6 @@ if not st.session_state.zalogowany:
             l = st.text_input("Login")
             p = st.text_input("Hasło", type="password")
             if st.button("ZALOGUJ", use_container_width=True, type="primary"):
-                # Szukamy użytkownika w tabeli pracownicy (tej samej co w systemie zamówień)
                 res = supabase.table("pracownicy").select("*").eq("login", l).eq("haslo", p).execute()
                 if res.data:
                     st.session_state.zalogowany = True
@@ -39,7 +35,7 @@ if not st.session_state.zalogowany:
                     st.session_state.rola = res.data[0].get('rola') or "użytkownik"
                     st.rerun()
                 else:
-                    st.error("Nieprawidłowe dane logowania!")
+                    st.error("Błędny login lub hasło!")
 else:
     # --- MENU BOCZNE ---
     with st.sidebar:
@@ -47,12 +43,12 @@ else:
         st.header("fakturki-tejbrant")
         st.divider()
         
-        menu = st.radio("WYBIERZ AKCJĘ:", [
-            "➕ Dodaj Wydatek", 
-            "📂 Moje Wydatki", 
-            "📊 Raporty i Księgowość", 
-            "📖 Instrukcja"
-        ])
+        # Dynamiczne menu (Zarządzanie kontami tylko dla Admina)
+        opcje = ["➕ Dodaj Wydatek", "📂 Moje Wydatki", "📊 Raporty i Księgowość", "📖 Instrukcja"]
+        if st.session_state.rola == "admin":
+            opcje.insert(3, "👥 Zarządzanie Kontami")
+            
+        menu = st.radio("WYBIERZ AKCJĘ:", opcje)
         
         st.divider()
         if st.button("🔄 Odśwież dane", use_container_width=True):
@@ -70,7 +66,7 @@ else:
         with st.container(border=True):
             sklep = st.text_input("🏪 Sklep / Dostawca")
             
-            # --- Żarty (Easter Eggs) ---
+            # --- Easter Eggs ---
             cp = sklep.strip().lower()
             if cp == "69": st.balloons()
             if cp == "666": st.snow()
@@ -78,30 +74,29 @@ else:
             col1, col2, col3 = st.columns(3)
             kwota = col1.number_input("💰 Kwota BRUTTO (zł)", min_value=0.0, step=0.01, format="%.2f")
             data_zak = col2.date_input("📅 Data zakupu", datetime.now())
-            rodzaj_doc = col3.selectbox("📄 Dokument", ["Papierowy / Paragon", "KSeF", "E-mail (PDF)"])
+            rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["Papierowy / Paragon", "KSeF", "E-mail (PDF)"])
 
             st.divider()
             c1, c2, c3 = st.columns(3)
-            typ_sklepu = c1.selectbox("📍 Sklep", ["Stacjonarny", "Internetowy"])
-            metoda = c2.selectbox("💳 Jak zapłacono", ["Karta", "Gotówka", "Przelew", "Pro-forma", "Pobranie"])
-            status = c3.selectbox("📌 Status", ["Zapłacone", "Pobranie", "Przelew/Proforma", "Rozliczone"])
+            typ_sklepu = c1.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
+            metoda = c2.selectbox("💳 Metoda płatności", ["Karta", "Gotówka", "Przelew", "Pro-forma", "Pobranie"])
+            status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Pobranie", "Przelew/Proforma", "Rozliczone"])
 
             st.divider()
             c4, c5, c6 = st.columns(3)
             odbiorca = c4.text_input("👤 Kto odebrał?", value=st.session_state.uzytkownik)
-            platnik = c5.text_input("👤 Kto płacił?", value=st.session_state.uzytkownik)
-            zrodlo = c6.selectbox("🏧 Źródło kasy", ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"])
+            platnik = c5.text_input("👤 Kto zapłacił?", value=st.session_state.uzytkownik)
+            zrodlo = c6.selectbox("🏧 Skąd środki?", ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"])
 
             projekt = st.text_input("🏗️ Projekt / Cel (np. Budowa Sosnowa)")
             if projekt.lower() == "dla szefa": st.balloons()
-            if projekt.lower() in ["fucha", "prywatne"]: st.warning("Uważaj, admin patrzy! 😉")
 
             uwagi = st.text_area("📝 Dodatkowe uwagi")
 
             st.divider()
             foto = None
-            if st.toggle("📷 Włącz aparat i zrób zdjęcie"):
-                foto = st.camera_input("Zrób zdjęcie faktury/paragonu")
+            if st.toggle("📷 Włącz aparat i zrób zdjęcie dokumentu"):
+                foto = st.camera_input("Zrób zdjęcie")
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
                 if sklep and kwota > 0:
@@ -123,16 +118,16 @@ else:
                         "zgloszone_przez": st.session_state.uzytkownik, "miesiac_rok": miesiac_rok
                     }).execute()
                     
-                    st.success("Zapisano pomyślnie w systemie fakturki-tejbrant!")
+                    st.success("Zapisano pomyślnie w fakturki-tejbrant!")
                     time.sleep(1); st.rerun()
                 else:
-                    st.error("Sklep i kwota nie mogą być puste!")
+                    st.error("Uzupełnij nazwę sklepu i kwotę!")
 
     # =========================================================================
-    # ZAKŁADKA: LISTA WYDATKÓW
+    # ZAKŁADKA: MOJE WYDATKI
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
-        st.title("📂 Historia Twoich zakupów")
+        st.title("📂 Twoja historia zakupów")
         res = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).order("data_zakupu", desc=True).execute()
         
         if not res.data:
@@ -155,7 +150,7 @@ else:
                         st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY (Dla księgowej)
+    # ZAKŁADKA: RAPORTY I KSIĘGOWOŚĆ
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
         st.title("📊 Rozliczenia miesięczne")
@@ -187,11 +182,48 @@ else:
             st.download_button(
                 label=f"📥 Pobierz raport EXCEL (CSV) za {sel_m}",
                 data=csv,
-                file_name=f"fakturki_tejbrant_{sel_m}.csv",
+                file_name=f"faktury_tejbrant_{sel_m}.csv",
                 mime="text/csv",
                 use_container_width=True,
                 type="primary"
             )
+
+    # =========================================================================
+    # ZAKŁADKA: ZARZĄDZANIE KONTAMI (TYLKO DLA ADMINA)
+    # =========================================================================
+    elif menu == "👥 Zarządzanie Kontami":
+        st.title("👥 Zarządzanie kontami pracowników")
+        
+        with st.container(border=True):
+            st.subheader("➕ Dodaj nowe konto")
+            c1, c2, c3 = st.columns(3)
+            n_log = c1.text_input("Podaj nowy Login")
+            n_has = c2.text_input("Podaj nowe Hasło")
+            n_rol = c3.selectbox("Rola w aplikacji", ["użytkownik", "admin"])
+            
+            if st.button("Utwórz konto", type="primary"):
+                if n_log and n_has:
+                    supabase.table("pracownicy").insert({"login": n_log, "haslo": n_has, "rola": n_rol}).execute()
+                    st.success(f"Dodano użytkownika: {n_log}!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Login i hasło nie mogą być puste!")
+
+        st.divider()
+        st.subheader("📋 Lista aktywnych kont")
+        res_p = supabase.table("pracownicy").select("*").order("login").execute()
+        for p in res_p.data:
+            with st.container(border=True):
+                col_info, col_btn = st.columns([5, 1])
+                rola_w = p.get('rola') or "użytkownik"
+                col_info.markdown(f"👤 Login: **{p['login']}** | 🔑 Hasło: `{p['haslo']}` | 🛡️ Rola: `{rola_w}`")
+                
+                # Zabezpieczenie, żeby nie skasować konta "Szef"
+                if p['login'].lower() != "szef":
+                    if col_btn.button("🗑️ Usuń", key=f"del_user_{p['login']}", type="secondary"):
+                        supabase.table("pracownicy").delete().eq("login", p['login']).execute()
+                        st.rerun()
 
     # =========================================================================
     # ZAKŁADKA: INSTRUKCJA
