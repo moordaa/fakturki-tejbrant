@@ -219,7 +219,7 @@ else:
                 rola_w = p.get('rola') or "użytkownik"
                 col_info.markdown(f"👤 Login: **{p['login']}** | 🔑 Hasło: `{p['haslo']}` | 🛡️ Rola: `{rola_w}`")
                 
-                if p['login'].lower() != "szef":
+                if p['login'].lower() != "emil":
                     if col_btn.button("🗑️ Usuń", key=f"del_user_{p['login']}", type="secondary"):
                         supabase.table("fakturki_konta").delete().eq("login", p['login']).execute()
                         st.rerun()
