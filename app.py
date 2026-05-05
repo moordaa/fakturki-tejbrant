@@ -204,10 +204,14 @@ else:
                             supabase.table("wydatki").delete().eq("id", r['id']).execute()
                             st.rerun()
                             
+                    # ZMIANA: Opcja cofnięcia rozliczenia
                     if not rozliczone:
-                        # ZMIANA NAZWY PRZYCISKU
                         if col_btn2.button("✅ Rozliczone z Marzeną", key=f"rozl_{r['id']}", type="primary"):
                             supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute()
+                            st.rerun()
+                    else:
+                        if col_btn2.button("↩️ Cofnij rozliczenie", key=f"cofnij_{r['id']}", type="secondary"):
+                            supabase.table("wydatki").update({"status": "Zapłacone"}).eq("id", r['id']).execute()
                             st.rerun()
                             
                     with st.expander("✏️ Edytuj wydatek"):
@@ -440,7 +444,7 @@ else:
         with col2:
             st.warning("**💸 3. Zwroty pieniędzy**\n\nWyłożyłeś swoje pieniądze? Zaznacz 'Karta prywatna' lub 'Gotówka'. System sam podliczy, ile firma musi Ci oddać, i **automatycznie odejmie** to, co już zostało w pełni rozliczone z Marzeną!")
             
-            st.error("**🤝 4. Rozliczenia i Edycja**\n\nW zakładce 'Moje Wydatki' masz pełną kontrolę nad błędami. Użyj opcji '✏️ Edytuj'. Gdy dostaniesz przelew, koniecznie kliknij przycisk '✅ Rozliczone z Marzeną'.")
+            st.error("**🤝 4. Rozliczenia i Edycja**\n\nW zakładce 'Moje Wydatki' masz pełną kontrolę nad błędami. Użyj opcji '✏️ Edytuj'. Gdy dostaniesz przelew, koniecznie kliknij przycisk '✅ Rozliczone z Marzeną' (zawsze możesz to potem cofnąć).")
             
         st.markdown("---")
         st.markdown("### 📊 Generowanie Raportów")
