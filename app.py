@@ -170,12 +170,19 @@ else:
             st.info("Brak wpisów.")
         else:
             for r in res.data:
+                rozliczone = (r.get('status') == "Rozliczone z Marzeną ✅")
+                
                 with st.container(border=True):
+                    if rozliczone:
+                        st.success("✅ **TRANSAKCJA W PEŁNI ROZLICZONA Z MARZENĄ**")
+                        
                     c1, c2, c3 = st.columns([2,1,1])
-                    c1.markdown(f"### {r['sklep']}")
+                    
+                    ikonka = "✅ " if rozliczone else "🛒 "
+                    c1.markdown(f"### {ikonka}{r['sklep']}")
                     
                     autor = f" | 👤 **Dodał(a): {r['zgloszone_przez']}**" if st.session_state.rola == "admin" else ""
-                    c1.caption(f"Dokument: {r['rodzaj_dokumentu']} | Projekt: {r['uwagi'].split('|')[0]}{autor}")
+                    c1.caption(f"Dokument: {r['rodzaj_dokumentu']} | Projekt: {r['uwagi'].split('|')[0]}{autor} | Status: **{r['status']}**")
                     
                     c2.subheader(f"{r['kwota']} zł")
                     c3.write(f"📅 {r['data_zakupu']}")
@@ -188,13 +195,56 @@ else:
                             else:
                                 st.image(url_dok, use_container_width=True)
                     
+                    # --- PRZYCISKI AKCJI ---
+                    st.divider()
+                    col_btn1, col_btn2, col_btn3 = st.columns([1,1,2])
+                    
                     if st.session_state.rola == "admin" or r['zgloszone_przez'] == st.session_state.uzytkownik:
-                        if st.button("🗑️ Usuń", key=f"del_{r['id']}"):
+                        if col_btn1.button("🗑️ Usuń", key=f"del_{r['id']}"):
                             supabase.table("wydatki").delete().eq("id", r['id']).execute()
+                            st.rerun()
+                            
+                    if not rozliczone:
+                        # ZMIANA NAZWY PRZYCISKU
+                        if col_btn2.button("✅ Rozliczone z Marzeną", key=f"rozl_{r['id']}", type="primary"):
+                            supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute()
+                            st.rerun()
+                            
+                    with st.expander("✏️ Edytuj wydatek"):
+                        st.caption("Wprowadź zmiany i kliknij Zapisz na dole.")
+                        e_col1, e_col2 = st.columns(2)
+                        
+                        nowy_sklep = e_col1.text_input("Sklep", value=r['sklep'], key=f"e_sklep_{r['id']}")
+                        nowa_kwota = e_col2.number_input("Kwota", value=float(r['kwota']), min_value=0.0, step=0.01, key=f"e_kwota_{r['id']}")
+                        nowa_data = e_col1.text_input("Data zakupu (lub '?')", value=r['data_zakupu'], key=f"e_data_{r['id']}")
+                        
+                        def get_index(opcje, wartosc):
+                            return opcje.index(wartosc) if wartosc in opcje else 0
+                            
+                        opcje_zrodlo = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                        nowe_zrodlo = e_col2.selectbox("Skąd środki?", opcje_zrodlo, index=get_index(opcje_zrodlo, r.get('zrodlo_srodkow')), key=f"e_zrodlo_{r['id']}")
+                        
+                        opcje_metoda = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma"]
+                        nowa_metoda = e_col1.selectbox("Metoda płatności", opcje_metoda, index=get_index(opcje_metoda, r.get('metoda_platnosci')), key=f"e_metoda_{r['id']}")
+                        
+                        opcje_status = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅"]
+                        nowy_status = e_col2.selectbox("Status", opcje_status, index=get_index(opcje_status, r.get('status')), key=f"e_status_{r['id']}")
+                        
+                        if st.button("💾 Zapisz zmiany", type="primary", key=f"e_zapisz_{r['id']}"):
+                            supabase.table("wydatki").update({
+                                "sklep": nowy_sklep,
+                                "kwota": nowa_kwota,
+                                "data_zakupu": nowa_data,
+                                "zrodlo_srodkow": nowe_zrodlo,
+                                "metoda_platnosci": nowa_metoda,
+                                "status": nowy_status
+                            }).eq("id", r['id']).execute()
+                            st.success("Zaktualizowano pomyślnie!")
+                            time.sleep(1)
                             st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY I KSIĘGOWOŚĆ (Z ZAAWANSOWANĄ WYSZUKIWARKĄ)
+    # ZAKŁADKA: RAPORTY I KSIĘGOWOŚĆ
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
         st.title("📊 Wyszukiwarka i Raporty")
@@ -209,38 +259,36 @@ else:
         else:
             df = pd.DataFrame(res_all.data)
             
-            # --- ZAAWANSOWANE FILTRY ---
             with st.expander("🔍 FILTRY WYSZUKIWANIA", expanded=True):
                 st.caption("Wypełnij wybrane pola, aby przefiltrować wyniki. Puste pola są ignorowane.")
                 
                 c1, c2, c3, c4 = st.columns(4)
                 
-                # Dynamiczna lista lat z bazy
                 dostepne_lata = sorted(list(set([str(d)[:4] for d in df['data_zakupu'] if str(d) != "?" and len(str(d))>=4])), reverse=True)
                 f_rok = c1.selectbox("📅 Rok", ["Wszystkie"] + dostepne_lata)
                 
                 f_miesiac = c2.selectbox("📅 Miesiąc", ["Wszystkie", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"])
                 
-                # Dokładna data z opcją na znak zapytania
                 brak_daty_filtr = c3.checkbox("Tylko brak daty (?)")
                 f_data = c3.date_input("📅 Dokładna data", value=None, disabled=brak_daty_filtr)
                 
-                f_kwota = c4.number_input("💰 Dokładna kwota (0 = pomiń)", min_value=0.0, step=0.01)
+                f_kwota = c4.number_input("💰 Kwota (Wyszuka ±30 zł)", min_value=0.0, step=0.01)
 
                 st.divider()
                 c5, c6, c7, c8 = st.columns(4)
                 
-                f_sklep = c5.text_input("🏪 Sklep (zawiera)")
-                f_odbiorca = c6.text_input("👤 Kto odebrał (zawiera)")
+                dostepne_sklepy = sorted(df['sklep'].astype(str).unique().tolist())
+                f_sklep = c5.multiselect("🏪 Sklep (Wybierz lub wpisz)", dostepne_sklepy)
                 
-                # Multiselecty dla opcji
+                dostepni_odbiorcy = sorted(df['odbiorca'].astype(str).unique().tolist())
+                f_odbiorca = c6.multiselect("👤 Kto odebrał (Wybierz lub wpisz)", dostepni_odbiorcy)
+                
                 dostepne_metody = df['metoda_platnosci'].dropna().unique()
                 f_metoda = c7.multiselect("💳 Forma płatności", dostepne_metody)
                 
                 dostepne_statusy = df['status'].dropna().unique()
                 f_status = c8.multiselect("📌 Status płatności", dostepne_statusy)
 
-            # --- APLIKOWANIE FILTRÓW ---
             df_filtered = df.copy()
             
             if f_rok != "Wszystkie":
@@ -255,13 +303,13 @@ else:
                 df_filtered = df_filtered[df_filtered['data_zakupu'] == str(f_data)]
                 
             if f_kwota > 0:
-                df_filtered = df_filtered[df_filtered['kwota'] == f_kwota]
+                df_filtered = df_filtered[(df_filtered['kwota'].astype(float) >= f_kwota - 30) & (df_filtered['kwota'].astype(float) <= f_kwota + 30)]
                 
             if f_sklep:
-                df_filtered = df_filtered[df_filtered['sklep'].astype(str).str.contains(f_sklep, case=False, na=False)]
+                df_filtered = df_filtered[df_filtered['sklep'].isin(f_sklep)]
                 
             if f_odbiorca:
-                df_filtered = df_filtered[df_filtered['odbiorca'].astype(str).str.contains(f_odbiorca, case=False, na=False)]
+                df_filtered = df_filtered[df_filtered['odbiorca'].isin(f_odbiorca)]
                 
             if f_metoda:
                 df_filtered = df_filtered[df_filtered['metoda_platnosci'].isin(f_metoda)]
@@ -269,7 +317,6 @@ else:
             if f_status:
                 df_filtered = df_filtered[df_filtered['status'].isin(f_status)]
 
-            # --- PODSUMOWANIE I WYNIKI ---
             st.divider()
             st.subheader(f"Znaleziono wpisów: {len(df_filtered)}")
             
@@ -277,27 +324,29 @@ else:
                 st.warning("Brak wyników dla podanych filtrów wyszukiwania.")
             else:
                 m1, m2, m3 = st.columns(3)
-                m1.metric("Suma całkowita (widoczna)", f"{df_filtered['kwota'].sum():.2f} zł")
-                ksef_sum = df_filtered[df_filtered['rodzaj_dokumentu'] == 'KSeF']['kwota'].sum()
-                m2.metric("W tym KSeF", f"{ksef_sum:.2f} zł")
-                pryw_sum = df_filtered[df_filtered['zrodlo_srodkow'] == 'Karta prywatna']['kwota'].sum()
-                m3.metric("Do zwrotu (karty pryw.)", f"{pryw_sum:.2f} zł")
+                m1.metric("Suma całkowita (widoczna)", f"{df_filtered['kwota'].astype(float).sum():.2f} zł")
                 
-                # Tabela z wynikami
+                ksef_sum = df_filtered[df_filtered['rodzaj_dokumentu'] == 'KSeF']['kwota'].astype(float).sum()
+                m2.metric("W tym KSeF", f"{ksef_sum:.2f} zł")
+                
+                do_zwrotu_df = df_filtered[
+                    (df_filtered['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & 
+                    (df_filtered['status'] != 'Rozliczone z Marzeną ✅')
+                ]
+                pryw_sum = do_zwrotu_df['kwota'].astype(float).sum()
+                m3.metric("Do zwrotu (Pryw./Gotówka)", f"{pryw_sum:.2f} zł")
+                
                 kolumny_do_raportu = ['data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 'metoda_platnosci', 'status', 'odbiorca', 'zgloszone_przez', 'uwagi']
                 
-                # Zabezpieczenie przed błędem, gdyby stara faktura nie miała jakiejś kolumny
                 for kol in kolumny_do_raportu:
                     if kol not in df_filtered.columns:
                         df_filtered[kol] = ""
                         
                 st.dataframe(df_filtered[kolumny_do_raportu], use_container_width=True)
                 
-                # --- EKSPORT DO EXCEL I PDF ---
                 st.markdown("### 💾 Eksportuj wyniki")
                 col_exp1, col_exp2 = st.columns(2)
                 
-                # 1. Eksport EXCEL (CSV)
                 csv = '\ufeff'.encode('utf8') + df_filtered[kolumny_do_raportu].to_csv(index=False, sep=';').encode('utf-8')
                 col_exp1.download_button(
                     label="📊 Pobierz plik EXCEL (CSV)",
@@ -308,7 +357,6 @@ else:
                     type="primary"
                 )
                 
-                # 2. Eksport do formatu wydruku PDF (Przez HTML)
                 html_table = df_filtered[kolumny_do_raportu].to_html(index=False)
                 html_content = f"""
                 <html>
@@ -376,14 +424,24 @@ else:
                         st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: INSTRUKCJA
+    # ZAKŁADKA: INSTRUKCJA (ZUPEŁNIE NOWA ODSŁONA)
     # =========================================================================
     elif menu == "📖 Instrukcja":
-        st.title("📖 Pomoc fakturki-tejbrant")
-        st.info("Jak poprawnie rozliczać zakupy?")
-        st.markdown("""
-        1. **Załączanie dokumentów**: Możesz wgrać zdjęcie paragonu, zrobić je bezpośrednio z telefonu lub dodać plik PDF od dostawcy.
-        2. **Brak daty / Oznaczenie KSeF**: Jeśli masz wątpliwości lub dokument to faktura KSeF, skorzystaj z opcji `?` w formularzu.
-        3. **Karta prywatna**: Jeśli wyłożyłeś własne pieniądze, wybierz 'Karta prywatna'. System podliczy to w raporcie "Do zwrotu".
-        4. **Wyszukiwarka i Raporty**: Na bieżąco filtruj dane i eksportuj spersonalizowane raporty do Excela lub drukuj do PDF dla księgowości.
-        """)
+        st.title("📖 Centrum Pomocy: Fakturki-Tejbrant")
+        st.markdown("---")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.success("**📷 1. Załączanie dokumentów**\n\nMożesz wgrać zdjęcie paragonu z dysku, zrobić je bezpośrednio telefonem (ikonka aparatu) lub dodać oryginalny plik PDF od dostawcy/sklepu.")
+            
+            st.info("**🤔 2. Brak daty i KSeF**\n\nJeśli paragon jest nieczytelny lub wyblakły, zaznacz 'Brak daty (?)'. Z kolei dla e-faktur ustrukturyzowanych wybierz 'KSeF' w rodzaju dokumentu.")
+
+        with col2:
+            st.warning("**💸 3. Zwroty pieniędzy**\n\nWyłożyłeś swoje pieniądze? Zaznacz 'Karta prywatna' lub 'Gotówka'. System sam podliczy, ile firma musi Ci oddać, i **automatycznie odejmie** to, co już zostało w pełni rozliczone z Marzeną!")
+            
+            st.error("**🤝 4. Rozliczenia i Edycja**\n\nW zakładce 'Moje Wydatki' masz pełną kontrolę nad błędami. Użyj opcji '✏️ Edytuj'. Gdy dostaniesz przelew, koniecznie kliknij przycisk '✅ Rozliczone z Marzeną'.")
+            
+        st.markdown("---")
+        st.markdown("### 📊 Generowanie Raportów")
+        st.markdown("> W zakładce **Raporty i Księgowość** znajduje się niesamowita wyszukiwarka! Możesz szukać wydatków po konkretnym sklepie (wystarczy zacząć wpisywać nazwę), a kwoty możesz podawać w przybliżeniu (±30 zł w obie strony). Na koniec jednym kliknięciem pobierasz piękny plik PDF lub Excel dla księgowości. 🚀")
