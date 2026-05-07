@@ -115,7 +115,7 @@ else:
                     except Exception as e: st.error(f"Błąd zapisu: {e}")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI (Z PODGLĄDEM UWAG I PEŁNĄ EDYCJĄ)
+    # ZAKŁADKA: MOJE WYDATKI
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
@@ -192,7 +192,7 @@ else:
                         }).eq("id", r['id']).execute(); st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY (PANCERNA WYSZUKIWARKA I LUKSUSOWY EXCEL)
+    # ZAKŁADKA: RAPORTY 
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
         st.title("📊 Wyszukiwarka i Raporty")
@@ -224,12 +224,12 @@ else:
                 
                 f_kwota = st.number_input("💰 Szukaj kwoty (±30 zł)", min_value=0.0)
 
-            # --- LOGIKA FILTROWANIA ---
             df_f = df.copy()
+            
             if len(f_zakres) == 2:
                 df_f = df_f[df_f['data_zakupu'] != '?']
                 df_f['temp_d'] = pd.to_datetime(df_f['data_zakupu'], errors='coerce').dt.date
-                df_f = df_f.dropna(subset=['temp_d'])
+                df_f = df_f.dropna(subset=['temp_d']) 
                 df_f = df_f[(df_f['temp_d'] >= f_zakres[0]) & (df_f['temp_d'] <= f_zakres[1])]
             
             if f_rok != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.startswith(f_rok, na=False)]
@@ -248,4 +248,90 @@ else:
             m1, m2 = st.columns(2)
             m1.metric("Suma wybranych", f"{df_f['kwota'].sum():.2f} zł")
             do_zw = df_f[(df_f['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & (~df_f['status'].str.contains('✅', na=False))]
-            m2.metric("Do zwrotu (Pryw/Got)", f"{do_zw['kw
+            m2.metric("Do zwrotu (Pryw/Got)", f"{do_zw['kwota'].sum():.2f} zł")
+            
+            st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']], use_container_width=True)
+            
+            st.divider()
+            st.subheader("📥 Pobierz raporty do księgowości")
+            c_ex1, c_ex2 = st.columns(2)
+            
+            try:
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']].to_excel(writer, index=False, sheet_name='Raport', startrow=2)
+                    workbook = writer.book
+                    worksheet = writer.sheets['Raport']
+                    
+                    title_format = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': 'white', 'bg_color': '#D32F2F', 'align': 'center', 'valign': 'vcenter', 'border': 1})
+                    worksheet.merge_range('A1:G2', f"🧾 RAPORT WYDATKÓW FIRMOWYCH (Wygenerowano: {datetime.now().strftime('%Y-%m-%d %H:%M')})", title_format)
+                    
+                    header_format = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                    cell_format = workbook.add_format({'border': 1, 'valign': 'vcenter', 'text_wrap': True})
+                    money_format = workbook.add_format({'border': 1, 'valign': 'vcenter', 'num_format': '#,##0.00 "zł"', 'align': 'center'})
+                    date_format = workbook.add_format({'border': 1, 'valign': 'vcenter', 'align': 'center'})
+                    
+                    headers = ['Data zakupu', 'Sklep / Dostawca', 'Kwota', 'Status', 'Metoda płatności', 'Pracownik', 'Uwagi / Projekt']
+                    for col_num, value in enumerate(headers):
+                        worksheet.write(2, col_num, value, header_format)
+                    
+                    for row_num in range(len(df_f)):
+                        for col_num in range(7):
+                            val = df_f.iloc[row_num, col_num]
+                            if col_num == 2: worksheet.write(row_num + 3, col_num, val, money_format)
+                            elif col_num in [0, 3, 4, 5]: worksheet.write(row_num + 3, col_num, val, date_format)
+                            else: worksheet.write(row_num + 3, col_num, val, cell_format)
+                    
+                    worksheet.set_column('A:A', 11)
+                    worksheet.set_column('B:B', 20)
+                    worksheet.set_column('C:C', 12)
+                    worksheet.set_column('D:D', 22)
+                    worksheet.set_column('E:E', 15)
+                    worksheet.set_column('F:F', 12)
+                    worksheet.set_column('G:G', 35)
+                    
+                    worksheet.set_landscape()
+                    worksheet.set_paper(9)
+                    worksheet.fit_to_pages(1, 0)
+                    worksheet.set_margins(left=0.3, right=0.3, top=0.5, bottom=0.5)
+                    worksheet.freeze_panes(3, 0)
+                    worksheet.autofilter(f'A3:G{len(df_f)+3}')
+                
+                c_ex1.download_button("📊 Pobierz ŁADNY EXCEL (.xlsx)", data=buffer.getvalue(), file_name=f"raport_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            except ModuleNotFoundError:
+                c_ex1.error("Brak wtyczki Excel. Użyj przycisku CSV lub dodaj 'xlsxwriter' w ustawieniach.")
+                csv = '\ufeff'.encode('utf8') + df_f.to_csv(index=False, sep=';').encode('utf-8')
+                c_ex1.download_button("📊 Pobierz ZWYKŁY EXCEL (CSV)", data=csv, file_name=f"raport_{date.today()}.csv", mime="text/csv", use_container_width=True)
+            
+            html = f"<html><style>table{{width:100%;border-collapse:collapse;font-family:sans-serif;}}th,td{{border:1px solid #ddd;padding:8px;text-align:left;}}th{{background:#f2f2f2;}}</style><body><h2>Raport Wydatków (Fakturki-Tejbrant)</h2><p>Wygenerowano: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>{df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez', 'uwagi']].to_html(index=False)}</body></html>"
+            c_ex2.download_button("📄 Pobierz PDF (HTML do druku)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html", use_container_width=True)
+
+    # =========================================================================
+    # ZAKŁADKA: ZARZĄDZANIE KONTAMI
+    # =========================================================================
+    elif menu == "👥 Zarządzanie Kontami":
+        st.title("👥 Zarządzanie użytkownikami")
+        with st.container(border=True):
+            st.subheader("➕ Dodaj nowe konto")
+            cx1, cx2, cx3 = st.columns(3)
+            nl, np, nr = cx1.text_input("Login"), cx2.text_input("Hasło"), cx3.selectbox("Rola", ["użytkownik", "admin"])
+            if st.button("Zapisz", type="primary"):
+                supabase.table("fakturki_konta").insert({"login": nl.strip(), "haslo": np.strip(), "rola": nr}).execute(); st.rerun()
+
+        res_p = supabase.table("fakturki_konta").select("*").execute()
+        for p in (res_p.data or []):
+            with st.container(border=True):
+                ca, cb = st.columns([4, 1])
+                ca.write(f"👤 **{p['login']}** | Hasło: `{p['haslo']}` | Rola: `{p['rola']}`")
+                if p['login'].lower() != "emil" and cb.button("Usuń", key=f"dp_{p['login']}"):
+                    supabase.table("fakturki_konta").delete().eq("login", p['login']).execute(); st.rerun()
+
+    # =========================================================================
+    # ZAKŁADKA: INSTRUKCJA
+    # =========================================================================
+    elif menu == "📖 Instrukcja":
+        st.title("📖 Pomoc Fakturki-Tejbrant")
+        st.markdown("---")
+        st.success("**✅ Rozliczenia:** Każda pozycja oznaczona 'Rozliczone z Marzeną' przestaje być liczona w polu 'Do zwrotu'.")
+        st.info("**📈 Excel:** Nowy przycisk pobiera plik XLSX z formatowaniem, który od razu nadaje się do wysłania do księgowości.")
+        st.warning("**❓ Puste pola:** Jeśli kwota lub data jest nieczytelna, użyj '?', aby móc zapisać dokument i wrócić do niego później.")
