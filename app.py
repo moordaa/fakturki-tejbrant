@@ -255,39 +255,65 @@ else:
             except:
                 c_ex1.error("Błąd wtyczki Excel. Sprawdź requirements.txt na GitHubie.")
 
-            # --- PRAWDZIWY PDF ---
+            # --- NIEZAWODNY PDF ---
             try:
-                # Automatyczne pobranie darmowej czcionki wspierającej język polski, żeby błąd "Helvetica" więcej nie wyskoczył
-                if not os.path.exists("DejaVuSans.ttf"):
-                    urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans.ttf", "DejaVuSans.ttf")
+                font_path = "Roboto-Regular.ttf"
+                font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
+                
+                # Próba pobrania stabilnej czcionki z Google Fonts
+                if not os.path.exists(font_path):
+                    try:
+                        urllib.request.urlretrieve(font_url, font_path)
+                    except:
+                        pass # Jeśli sieć zablokuje, zignoruj błąd i przejdź do trybu awaryjnego
                 
                 pdf = FPDF(orientation='L', unit='mm', format='A4')
                 pdf.add_page()
-                pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
                 
-                pdf.set_font("DejaVu", "", 16)
-                pdf.cell(0, 10, f"Raport Wydatkow - {date.today()}", ln=True, align='C')
-                pdf.set_font("DejaVu", "", 10)
+                # Ustalenie czy mamy polską czcionkę, czy używamy trybu awaryjnego bez ogonków
+                if os.path.exists(font_path):
+                    pdf.add_font('Roboto', '', font_path, uni=True)
+                    pdf.set_font('Roboto', '', 16)
+                    tryb_awaryjny = False
+                else:
+                    pdf.set_font('helvetica', 'B', 16)
+                    tryb_awaryjny = True
                 
-                # Nagłówki PDF
+                # Funkcja czyszcząca tekst (usuwa emotikony i w trybie awaryjnym ucina polskie ogonki)
+                def bezpieczny_tekst(tekst):
+                    t = str(tekst).replace('✅', '').strip()
+                    if tryb_awaryjny:
+                        zamienniki = {'ą':'a', 'ć':'c', 'ę':'e', 'ł':'l', 'ń':'n', 'ó':'o', 'ś':'s', 'ź':'z', 'ż':'z',
+                                      'Ą':'A', 'Ć':'C', 'Ę':'E', 'Ł':'L', 'Ń':'N', 'Ó':'O', 'Ś':'S', 'Ź':'Z', 'Ż':'Z'}
+                        for pl, asc in zamienniki.items():
+                            t = t.replace(pl, asc)
+                    return t
+                
+                pdf.cell(0, 10, bezpieczny_tekst(f"Raport Wydatkow - {date.today()}"), ln=True, align='C')
+                
+                if os.path.exists(font_path):
+                    pdf.set_font('Roboto', '', 10)
+                else:
+                    pdf.set_font('helvetica', 'B', 10)
+                
                 cols = [30, 60, 25, 45, 40, 40]
                 headers = ["Data", "Sklep", "Kwota", "Status", "Metoda", "Osoba"]
                 for i, h in enumerate(headers):
-                    pdf.cell(cols[i], 10, h, 1, 0, 'C')
+                    pdf.cell(cols[i], 10, bezpieczny_tekst(h), 1, 0, 'C')
                 pdf.ln()
                 
-                pdf.set_font("DejaVu", "", 9)
+                if os.path.exists(font_path):
+                    pdf.set_font('Roboto', '', 9)
+                else:
+                    pdf.set_font('helvetica', '', 9)
+                    
                 for index, row in df_f.iterrows():
-                    pdf.cell(cols[0], 8, str(row['data_zakupu']), 1)
-                    pdf.cell(cols[1], 8, str(row['sklep'])[:35], 1)
-                    pdf.cell(cols[2], 8, f"{row['kwota']:.2f} zl", 1, 0, 'R')
-                    
-                    # Czyszczenie statusu z emotikon, bo one też powodują błędy w PDF!
-                    status_clean = str(row['status']).replace('✅', '').strip()
-                    pdf.cell(cols[3], 8, status_clean[:22], 1)
-                    
-                    pdf.cell(cols[4], 8, str(row['metoda_platnosci'])[:20], 1)
-                    pdf.cell(cols[5], 8, str(row['zgloszone_przez']), 1)
+                    pdf.cell(cols[0], 8, bezpieczny_tekst(row['data_zakupu']), 1)
+                    pdf.cell(cols[1], 8, bezpieczny_tekst(str(row['sklep'])[:35]), 1)
+                    pdf.cell(cols[2], 8, bezpieczny_tekst(f"{row['kwota']:.2f} zl"), 1, 0, 'R')
+                    pdf.cell(cols[3], 8, bezpieczny_tekst(str(row['status'])[:22]), 1)
+                    pdf.cell(cols[4], 8, bezpieczny_tekst(str(row['metoda_platnosci'])[:20]), 1)
+                    pdf.cell(cols[5], 8, bezpieczny_tekst(str(row['zgloszone_przez'])), 1)
                     pdf.ln()
                 
                 pdf_output = pdf.output()
