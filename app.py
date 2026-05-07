@@ -1,8 +1,9 @@
 import streamlit as st
 from supabase import create_client, Client
-from datetime import datetime, date
+from datetime import datetime
 import pandas as pd
 import time
+import urllib.parse
 
 # --- KONFIGURACJA ---
 URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
@@ -10,10 +11,8 @@ KEY = "sb_publishable_aPIiW1rzHtM3vGcVaUuN-w_R9MadPTt"
 
 supabase: Client = create_client(URL, KEY)
 
-# Konfiguracja strony
 st.set_page_config(page_title="fakturki-tejbrant", page_icon="🧾", layout="wide")
 
-# --- ZARZĄDZANIE SESJĄ ---
 if 'zalogowany' not in st.session_state:
     st.session_state.zalogowany = False
     st.session_state.uzytkownik = ""
@@ -24,34 +23,30 @@ if not st.session_state.zalogowany:
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
         st.title("🧾 FAKTURKI-TEJBRANT")
-        st.caption("System Ewidencji i Rozliczeń Wydatków")
+        st.caption("Ewidencja wydatków firmowych")
         with st.container(border=True):
-            l = st.text_input("Login", placeholder="np. Emil")
-            p = st.text_input("Hasło", type="password", placeholder="••••••••")
-            
-            if st.button("ZALOGUJ DO SYSTEMU", use_container_width=True, type="primary"):
-                # ZMIANA: ilike sprawia, że Emil = emil. Hasło zostaje case-sensitive (bezpieczeństwo)
-                res = supabase.table("fakturki_konta").select("*").ilike("login", l.strip()).eq("haslo", p.strip()).execute()
-                
+            l = st.text_input("Login")
+            p = st.text_input("Hasło", type="password")
+            if st.button("ZALOGUJ", use_container_width=True, type="primary"):
+                res = supabase.table("fakturki_konta").select("*").eq("login", l).eq("haslo", p).execute()
                 if res.data:
                     st.session_state.zalogowany = True
-                    st.session_state.uzytkownik = res.data[0].get('login')
+                    st.session_state.uzytkownik = l
                     st.session_state.rola = res.data[0].get('rola') or "użytkownik"
                     st.rerun()
                 else:
-                    st.error("Błędny login lub hasło! Sprawdź wielkość liter w haśle.")
+                    st.error("Błędny login lub hasło!")
 else:
     # --- MENU BOCZNE ---
     with st.sidebar:
         st.success(f"Zalogowano: **{st.session_state.uzytkownik}**")
-        st.caption(f"Uprawnienia: {st.session_state.rola.upper()}")
+        st.header("fakturki-tejbrant")
         st.divider()
         opcje = ["➕ Dodaj Wydatek", "📂 Moje Wydatki", "📊 Raporty i Księgowość", "📖 Instrukcja"]
-        if st.session_state.rola == "admin":
-            opcje.insert(3, "👥 Zarządzanie Kontami")
-            
-        menu = st.radio("MENU:", opcje)
+        if st.session_state.rola == "admin": opcje.insert(3, "👥 Zarządzanie Kontami")
+        menu = st.radio("WYBIERZ AKCJĘ:", opcje)
         st.divider()
+        if st.button("🔄 Odśwież dane", use_container_width=True): st.rerun()
         if st.button("🚪 Wyloguj", use_container_width=True):
             st.session_state.zalogowany = False
             st.rerun()
@@ -60,169 +55,227 @@ else:
     # ZAKŁADKA: DODAWANIE WYDATKU
     # =========================================================================
     if menu == "➕ Dodaj Wydatek":
-        st.title("➕ Rejestracja nowego zakupu")
+        st.title("➕ Dodaj nowy zakup")
         with st.container(border=True):
             sklep = st.text_input("🏪 Sklep / Dostawca")
             col1, col2, col3 = st.columns(3)
             
-            brak_kwoty = col1.checkbox("Nie znam kwoty (?)")
-            kwota = col1.number_input("💰 Kwota Brutto", min_value=0.0, step=0.01, format="%.2f", disabled=brak_kwoty)
+            brak_kwoty = col1.checkbox("Brak kwoty (?)")
+            kwota = col1.number_input("💰 Kwota BRUTTO (zł)", min_value=0.0, step=0.01, format="%.2f", disabled=brak_kwoty)
             
-            brak_daty = col2.checkbox("Nie znam daty (?)")
-            data_zak = col2.date_input("📅 Data", date.today(), disabled=brak_daty)
-            rodzaj_doc = col3.selectbox("📄 Dokument", ["Papierowy / Paragon", "Faktura PDF", "KSeF", "E-mail", "?"])
+            brak_daty = col2.checkbox("Brak daty (?)")
+            data_zak = col2.date_input("📅 Data zakupu", datetime.now(), disabled=brak_daty)
+            rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "?"])
 
             st.divider()
             c1, c2, c3 = st.columns(3)
-            metoda = c1.selectbox("💳 Metoda płatności", ["Karta firmowa", "Karta prywatna", "Gotówka", "Przelew", "Pro-forma"])
-            status = c2.selectbox("📌 Status", ["Zapłacone", "Do opłacenia", "Przelew"])
-            zrodlo = c3.selectbox("🏧 Środki", ["Firmowe", "Prywatne"])
-
-            projekt = st.text_input("🏗️ Projekt / Cel")
-            uwagi = st.text_area("📝 Uwagi dodatkowe")
+            typ_sklepu = c1.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
+            metoda = c2.selectbox("💳 Metoda płatności", ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"])
+            status = c3.selectbox("📌 Status płatności", ["Zapłacone", "Do opłacenia", "Przelew"])
 
             st.divider()
-            opcja_dok = st.radio("Załącznik:", ["Brak", "📁 Plik z dysku", "📷 Aparat"], horizontal=True)
+            c4, c5, c6 = st.columns(3)
+            odbiorca = c4.text_input("👤 Kto odebrał?", value=st.session_state.uzytkownik)
+            platnik = c5.text_input("👤 Kto zapłacił?", value=st.session_state.uzytkownik)
+            zrodlo = c6.selectbox("🏧 Skąd środki?", ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"])
+            projekt = st.text_input("🏗️ Projekt / Cel")
+            uwagi = st.text_area("📝 Dodatkowe uwagi")
+
+            st.divider()
+            st.write("📎 **Dodaj dokument**")
+            opcja_dok = st.radio("Metoda:", ["Brak", "📁 Wgraj plik", "📷 Zdjęcie"], horizontal=True)
             plik_u, foto = None, None
-            if opcja_dok == "📁 Plik z dysku": plik_u = st.file_uploader("Wybierz PDF/Foto", type=["png", "jpg", "pdf"])
-            elif opcja_dok == "📷 Aparat": foto = st.camera_input("Zrób zdjęcie")
+            if opcja_dok == "📁 Wgraj plik": plik_u = st.file_uploader("Wybierz plik", type=["png", "jpg", "jpeg", "pdf"])
+            elif opcja_dok == "📷 Zdjęcie": foto = st.camera_input("Zrób zdjęcie")
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
                 if sklep:
                     url_zdj = ""
                     if plik_u or foto:
-                        with st.spinner("Wysyłanie pliku..."):
+                        with st.spinner("Wgrywanie dokumentu..."):
                             d_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
                             ext = plik_u.name.split('.')[-1].lower() if plik_u else "jpg"
                             d_nazwa = f"faktura_{int(time.time())}.{ext}"
                             supabase.storage.from_("faktury_zdjecia").upload(d_nazwa, d_bytes)
                             url_zdj = supabase.storage.from_("faktury_zdjecia").get_public_url(d_nazwa)
 
+                    kwota_db = 0.0 if brak_kwoty else kwota
+                    data_zak_str = "?" if brak_daty else str(data_zak)
+                    miesiac_rok = datetime.now().strftime("%Y-%m") if brak_daty else data_zak.strftime("%Y-%m")
+
                     try:
                         supabase.table("wydatki").insert({
-                            "sklep": sklep, "kwota": 0.0 if brak_kwoty else kwota,
-                            "data_zakupu": "?" if brak_daty else str(data_zak),
-                            "rodzaj_dokumentu": rodzaj_doc, "metoda_platnosci": metoda, "status": status,
-                            "zrodlo_srodkow": zrodlo, "uwagi": f"PROJEKT: {projekt} | {uwagi}",
-                            "zdjecie_url": url_zdj, "zgloszone_przez": st.session_state.uzytkownik,
-                            "miesiac_rok": datetime.now().strftime("%Y-%m")
+                            "sklep": sklep, "kwota": kwota_db, "data_zakupu": data_zak_str,
+                            "rodzaj_dokumentu": rodzaj_doc, "typ_sklepu": typ_sklepu, 
+                            "metoda_platnosci": metoda, "status": status,
+                            "odbiorca": odbiorca, "platnik": platnik, "zrodlo_srodkow": zrodlo,
+                            "uwagi": f"PROJEKT: {projekt} | {uwagi}", "zdjecie_url": url_zdj, 
+                            "zgloszone_przez": st.session_state.uzytkownik, "miesiac_rok": miesiac_rok
                         }).execute()
-                        st.success("✅ Zapisano!"); time.sleep(1); st.rerun()
-                    except Exception as e: st.error(f"Błąd zapisu: {e}")
+                        st.success("Zapisano pomyślnie!")
+                        time.sleep(1); st.rerun()
+                    except Exception as e:
+                        st.error(f"Błąd bazy danych: {e}")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI (PEŁNA EDYCJA WSZYSTKIEGO)
+    # ZAKŁADKA: MOJE WYDATKI (PRZYWRÓCONA PEŁNA EDYCJA)
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
-            st.title("📂 Wszystkie Wydatki (Widok Admina)")
+            st.title("📂 Wszystkie wydatki (Widok Admina)")
             res = supabase.table("wydatki").select("*").order("id", desc=True).execute()
         else:
-            st.title("📂 Twoje Wydatki")
+            st.title("📂 Twoja historia zakupów")
             res = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).order("id", desc=True).execute()
         
-        for r in (res.data or []):
-            rozl = ("✅" in str(r.get('status')))
-            with st.container(border=True):
-                if rozl: st.success("✅ ROZLICZONE Z MARZENĄ")
-                c1, c2, c3 = st.columns([2,1,1])
-                c1.markdown(f"### {r['sklep']}")
-                c1.caption(f"Dodał: {r['zgloszone_przez']} | Projekt: {r['uwagi'].split('|')[0]}")
-                kw_p = "?" if float(r['kwota']) == 0.0 else f"{r['kwota']:.2f} zł"
-                c2.subheader(kw_p)
-                c3.write(f"📅 {r['data_zakupu']}")
-                
-                b1, b2, b3 = st.columns(3)
-                if b1.button("🗑️ Usuń", key=f"d_{r['id']}"):
-                    supabase.table("wydatki").delete().eq("id", r['id']).execute(); st.rerun()
-                if not rozl and b2.button("✅ Rozlicz", key=f"r_{r['id']}", type="primary"):
-                    supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute(); st.rerun()
-                
-                with b3.expander("✏️ Edytuj wszystko"):
-                    def g_idx(opt, val): return opt.index(val) if val in opt else 0
-                    en_sklep = st.text_input("Sklep", value=r['sklep'], key=f"e1_{r['id']}")
-                    en_kwota = st.text_input("Kwota (0 lub ? oznacza brak)", value="?" if float(r['kwota']) == 0.0 else str(r['kwota']), key=f"e2_{r['id']}")
-                    en_st = st.selectbox("Status", ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅"], index=g_idx(["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅"], r['status']), key=f"e3_{r['id']}")
-                    if st.button("💾 Zapisz", key=f"es_{r['id']}"):
-                        n_kw = 0.0 if en_kwota == "?" else float(en_kwota.replace(",", "."))
-                        supabase.table("wydatki").update({"sklep": en_sklep, "kwota": n_kw, "status": en_st}).eq("id", r['id']).execute(); st.rerun()
+        if res.data:
+            for r in res.data:
+                rozl = (r.get('status') == "Rozliczone z Marzeną ✅")
+                with st.container(border=True):
+                    if rozl: st.success("✅ **TRANSAKCJA W PEŁNI ROZLICZONA Z MARZENĄ**")
+                    c1, c2, c3 = st.columns([2,1,1])
+                    c1.markdown(f"### {'✅ ' if rozl else '🛒 '}{r['sklep']}")
+                    autor = f" | 👤 **Dodał(a): {r['zgloszone_przez']}**" if st.session_state.rola == "admin" else ""
+                    c1.caption(f"Dokument: {r['rodzaj_dokumentu']} | Projekt: {r['uwagi'].split('|')[0]}{autor} | Status: **{r['status']}**")
+                    kw_pokaz = "?" if r['kwota'] == 0 else f"{r['kwota']}"
+                    c2.subheader(f"{kw_pokaz} zł")
+                    c3.write(f"📅 {r['data_zakupu']}")
+                    
+                    if r.get('zdjecie_url'):
+                        with st.expander("📎 Zobacz dokument"):
+                            if ".pdf" in r['zdjecie_url'].lower(): st.markdown(f"**[📄 Otwórz PDF]({r['zdjecie_url']})**")
+                            else: st.image(r['zdjecie_url'], use_container_width=True)
+
+                    st.divider()
+                    col_b1, col_b2, col_b3 = st.columns([1,1,2])
+                    if col_b1.button("🗑️ Usuń", key=f"d_{r['id']}"):
+                        supabase.table("wydatki").delete().eq("id", r['id']).execute(); st.rerun()
+                    if not rozl:
+                        if col_b2.button("✅ Rozliczone z Marzeną", key=f"r_{r['id']}", type="primary"):
+                            supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute(); st.rerun()
+                    else:
+                        if col_b2.button("↩️ Cofnij rozliczenie", key=f"c_{r['id']}"):
+                            supabase.table("wydatki").update({"status": "Zapłacone"}).eq("id", r['id']).execute(); st.rerun()
+                            
+                    with st.expander("✏️ Edytuj WSZYSTKIE pola"):
+                        def g_idx(opt, val): return opt.index(val) if val in opt else 0
+                        ee1, ee2 = st.columns(2)
+                        n_sklep = ee1.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
+                        n_kw_s = ee2.text_input("Kwota (liczba lub ?)", value="?" if r['kwota'] == 0 else str(r['kwota']), key=f"ek_{r['id']}")
+                        
+                        ee3, ee4, ee5 = st.columns(3)
+                        n_data = ee3.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                        o_doc = ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "?"]
+                        n_doc = ee4.selectbox("Rodzaj dok.", o_doc, index=g_idx(o_doc, r.get('rodzaj_dokumentu')), key=f"erd_{r['id']}")
+                        o_typ = ["Stacjonarny", "Internetowy"]
+                        n_typ = ee5.selectbox("Miejsce", o_typ, index=g_idx(o_typ, r.get('typ_sklepu')), key=f"et_{r['id']}")
+                        
+                        ee6, ee7, ee8 = st.columns(3)
+                        o_met = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
+                        n_met = ee6.selectbox("Metoda", o_met, index=g_idx(o_met, r.get('metoda_platnosci')), key=f"em_{r['id']}")
+                        o_st = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
+                        n_st = ee7.selectbox("Status", o_st, index=g_idx(o_st, r.get('status')), key=f"est_{r['id']}")
+                        o_zr = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                        n_zr = ee8.selectbox("Źródło", o_zr, index=g_idx(o_zr, r.get('zrodlo_srodkow')), key=f"ez_{r['id']}")
+
+                        n_uwag = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"euw_{r['id']}")
+                        
+                        if st.button("💾 Zapisz zmiany", key=f"eb_{r['id']}", type="primary", use_container_width=True):
+                            try:
+                                n_kw_v = 0.0 if n_kw_s == "?" else float(n_kw_s.replace(",", "."))
+                                supabase.table("wydatki").update({
+                                    "sklep": n_sklep, "kwota": n_kw_v, "data_zakupu": n_data,
+                                    "rodzaj_dokumentu": n_doc, "typ_sklepu": n_typ,
+                                    "metoda_platnosci": n_met, "status": n_st, "zrodlo_srodkow": n_zr,
+                                    "uwagi": n_uwag
+                                }).eq("id", r['id']).execute()
+                                st.success("Zapisano!")
+                                time.sleep(0.5); st.rerun()
+                            except: st.error("Błąd zapisu! Sprawdź kwotę.")
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY (WYSZUKIWARKA + ŁADNY PDF)
+    # ZAKŁADKA: RAPORTY (PRZYWRÓCONA WYSZUKIWARKA I PDF)
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
-        st.title("📊 Zaawansowane Raporty")
-        res = supabase.table("wydatki").select("*").execute()
-        if res.data:
-            df = pd.DataFrame(res.data)
-            df['kwota'] = df['kwota'].astype(float)
+        st.title("📊 Wyszukiwarka i Raporty")
+        if st.session_state.rola == "admin": res_all = supabase.table("wydatki").select("*").execute()
+        else: res_all = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).execute()
+            
+        if res_all.data:
+            df = pd.DataFrame(res_all.data)
+            df['kwota'] = df['kwota'].fillna(0).astype(float)
             
             with st.expander("🔍 FILTRY WYSZUKIWANIA", expanded=True):
-                f1, f2, f3 = st.columns(3)
-                f_zakres = f1.date_input("Zakres dat", [date(2026,1,1), date.today()])
-                pracownicy = sorted(df['zgloszone_przez'].unique().tolist())
-                f_prac = f2.multiselect("Pracownik", pracownicy, default=pracownicy)
-                f_kw = f3.number_input("Kwota ±30 zł", min_value=0.0)
+                c1, c2, c3, c4 = st.columns(4)
+                d_lat = sorted(list(set([str(d)[:4] for d in df['data_zakupu'] if len(str(d))>=4])), reverse=True)
+                f_rok = c1.selectbox("Rok", ["Wszystkie"] + d_lat)
+                f_mies = c2.selectbox("Miesiąc", ["Wszystkie"] + [f"{i:02d}" for i in range(1,13)])
+                f_kw = c4.number_input("Kwota (±30 zł)", min_value=0.0)
+                
+                d_sk = sorted(df['sklep'].astype(str).unique().tolist())
+                f_sk = st.multiselect("Sklepy", d_sk)
+                d_st = df['status'].unique().tolist()
+                f_st = st.multiselect("Statusy", d_st)
 
-            df_f = df[df['zgloszone_przez'].isin(f_prac)]
+            df_f = df.copy()
+            if f_rok != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.startswith(f_rok)]
+            if f_mies != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str[5:7] == f_mies]
             if f_kw > 0: df_f = df_f[(df_f['kwota'] >= f_kw - 30) & (df_f['kwota'] <= f_kw + 30)]
+            if f_sk: df_f = df_f[df_f['sklep'].isin(f_sk)]
+            if f_st: df_f = df_f[df_f['status'].isin(f_st)]
 
-            m1, m2 = st.columns(2)
-            m1.metric("Suma wybranych", f"{df_f['kwota'].sum():.2f} zł")
-            do_zw = df_f[(df_f['zrodlo_srodkow'] == 'Prywatne') & (~df_f['status'].str.contains('✅'))]
-            m2.metric("Do zwrotu", f"{do_zw['kwota'].sum():.2f} zł")
+            st.subheader(f"Wyniki: {len(df_f)}")
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Suma widoczna", f"{df_f['kwota'].sum():.2f} zł")
             
-            st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']], use_container_width=True)
+            # Inteligentne "Do zwrotu"
+            do_zw = df_f[(df_f['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & (df_f['status'] != 'Rozliczone z Marzeną ✅')]
+            m3.metric("Do zwrotu (Pryw/Got)", f"{do_zw['kwota'].sum():.2f} zł")
             
-            # STYLIZOWANY RAPORT HTML (DO DRUKU PDF)
-            html = f"""
-            <style>
-                body {{ font-family: sans-serif; color: #333; }}
-                table {{ width: 100%; border-collapse: collapse; }}
-                th {{ background: #f4f4f4; padding: 10px; border: 1px solid #ddd; }}
-                td {{ padding: 10px; border: 1px solid #ddd; }}
-                .rozl {{ background: #e8f5e9; }}
-            </style>
-            <h2>Raport Wydatków Firmowych</h2>
-            <p>Wygenerowano: {datetime.now().strftime('%d.%m.%Y %H:%M')}</p>
-            <table>
-                <tr><th>Data</th><th>Sklep</th><th>Kwota</th><th>Osoba</th><th>Status</th></tr>
-                {"".join([f"<tr class='{'rozl' if '✅' in str(row['status']) else ''}'><td>{row['data_zakupu']}</td><td>{row['sklep']}</td><td>{row['kwota']:.2f} zł</td><td>{row['zgloszone_przez']}</td><td>{row['status']}</td></tr>" for _, row in df_f.iterrows()])}
-            </table>
-            """
-            st.download_button("📄 Pobierz Raport do druku (HTML/PDF)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html")
+            st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez', 'uwagi']], use_container_width=True)
+            
+            col_e1, col_e2 = st.columns(2)
+            csv = '\ufeff'.encode('utf8') + df_f.to_csv(index=False, sep=';').encode('utf-8')
+            col_e1.download_button("📊 Pobierz EXCEL (CSV)", data=csv, file_name="raport.csv", mime="text/csv", use_container_width=True)
+            html = f"<html><body><h2>Raport Wydatków</h2>{df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']].to_html(index=False)}</body></html>"
+            col_e2.download_button("📄 Pobierz PDF (Do druku)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html", use_container_width=True)
 
     # =========================================================================
-    # ZAKŁADKA: KONTA (ZARZĄDZANIE)
+    # ZAKŁADKA: ZARZĄDZANIE KONTAMI (PRZYWRÓCONA)
     # =========================================================================
     elif menu == "👥 Zarządzanie Kontami":
-        st.title("👥 Pracownicy i Dęstępy")
+        st.title("👥 Zarządzanie kontami użytkowników")
         with st.container(border=True):
             st.subheader("➕ Dodaj nowe konto")
             cc1, cc2, cc3 = st.columns(3)
-            nl = cc1.text_input("Login")
-            np = cc2.text_input("Hasło")
-            nr = cc3.selectbox("Rola", ["użytkownik", "admin"])
-            if st.button("Utwórz konto"):
-                supabase.table("fakturki_konta").insert({"login": nl, "haslo": np, "rola": nr}).execute()
-                st.success("Dodano!"); time.sleep(1); st.rerun()
+            new_log = cc1.text_input("Login")
+            new_pass = cc2.text_input("Hasło")
+            new_role = cc3.selectbox("Rola", ["użytkownik", "admin"])
+            if st.button("Zapisz konto", type="primary"):
+                if new_log and new_pass:
+                    supabase.table("fakturki_konta").insert({"login": new_log.strip().lower(), "haslo": new_pass.strip(), "rola": new_role}).execute()
+                    st.success("Dodano!"); time.sleep(1); st.rerun()
 
-        res_p = supabase.table("fakturki_konta").select("*").execute()
+        st.divider()
+        res_p = supabase.table("fakturki_konta").select("*").order("login").execute()
         for p in res_p.data:
             with st.container(border=True):
-                col_i, col_b = st.columns([4, 1])
-                col_i.write(f"👤 **{p['login']}** | Hasło: `{p['haslo']}` | Rola: `{p['rola']}`")
-                if p['login'] not in ["Emil", "emil"] and col_b.button("Usuń", key=f"dp_{p['login']}"):
-                    supabase.table("fakturki_konta").delete().eq("login", p['login']).execute(); st.rerun()
+                col_info, col_btn = st.columns([4, 1])
+                col_info.markdown(f"👤 Login: **{p['login']}** | 🔑 Hasło: `{p['haslo']}` | 🛡️ Rola: `{p['rola']}`")
+                if p['login'].lower() != "emil":
+                    if col_btn.button("Usuń", key=f"du_{p['login']}", use_container_width=True):
+                        supabase.table("fakturki_konta").delete().eq("login", p['login']).execute(); st.rerun()
 
     # =========================================================================
     # ZAKŁADKA: INSTRUKCJA
     # =========================================================================
     elif menu == "📖 Instrukcja":
-        st.title("📖 Pomoc Fakturki-Tejbrant")
-        st.info("💡 **Sesja:** Nie musisz się wylogowywać. Po prostu zamknij przeglądarkę.")
-        st.markdown("""
-        * **Kwota (?):** Znak zapytania zapisuje 0.0 zł, by nie blokować bazy.
-        * **Rozliczenia:** Status z zielonym ptaszkiem ✅ odejmuje kwotę z licznika 'Do zwrotu'.
-        * **PDF:** Raporty można pobierać w formie ładnej tabeli gotowej do druku.
-        """)
+        st.title("📖 Centrum Pomocy: Fakturki-Tejbrant")
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.success("**📷 1. Dokumenty**\nWgrywaj zdjęcia, pliki PDF lub rób fotki aparatem.")
+            st.info("**🤔 2. Brak danych**\nJeśli nie znasz kwoty/daty, zaznacz '?'. W bazie zapisze się 0.0, ale aplikacja pokaże to jako znak zapytania.")
+        with col2:
+            st.warning("**💸 3. Zwroty**\nKwoty 'Do zwrotu' (Karta pryw./Gotówka) znikają z licznika automatycznie po kliknięciu 'Rozliczone z Marzeną'.")
+            st.error("**🤝 4. Edycja**\nMożesz edytować każde pole dowolnego wydatku w zakładce 'Moje Wydatki'.")
