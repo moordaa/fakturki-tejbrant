@@ -1,3 +1,5 @@
+import os
+import urllib.request
 import streamlit as st
 from supabase import create_client, Client
 from datetime import datetime, date
@@ -116,7 +118,7 @@ else:
                     except Exception as e: st.error(f"Błąd zapisu: {e}")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI (Z PODGLĄDEM UWAG)
+    # ZAKŁADKA: MOJE WYDATKI
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
@@ -133,7 +135,6 @@ else:
                 c1, c2, c3 = st.columns([2,1,1])
                 c1.markdown(f"### {'✅ ' if rozl else '🛒 '}{r['sklep']}")
                 
-                # WYŚWIETLANIE UWAG
                 if r.get('uwagi') and r.get('uwagi') != "PROJEKT:  | ":
                     st.markdown(f"**📝 Uwagi/Projekt:** *{r['uwagi']}*")
                 
@@ -170,7 +171,7 @@ else:
                         supabase.table("wydatki").update({"sklep": e_s, "kwota": n_kw, "data_zakupu": e_d, "status": e_st, "uwagi": e_u}).eq("id", r['id']).execute(); st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY (WYSZUKIWARKA I PDF/EXCEL)
+    # ZAKŁADKA: RAPORTY
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
         st.title("📊 Zaawansowana Wyszukiwarka")
@@ -256,26 +257,36 @@ else:
 
             # --- PRAWDZIWY PDF ---
             try:
+                # Automatyczne pobranie darmowej czcionki wspierającej język polski, żeby błąd "Helvetica" więcej nie wyskoczył
+                if not os.path.exists("DejaVuSans.ttf"):
+                    urllib.request.urlretrieve("https://github.com/matomo-org/travis-scripts/raw/master/fonts/DejaVuSans.ttf", "DejaVuSans.ttf")
+                
                 pdf = FPDF(orientation='L', unit='mm', format='A4')
                 pdf.add_page()
-                pdf.set_font("helvetica", "B", 16)
-                pdf.cell(0, 10, f"Raport Faktur - {date.today()}", ln=True, align='C')
-                pdf.set_font("helvetica", "B", 10)
+                pdf.add_font('DejaVu', '', 'DejaVuSans.ttf', uni=True)
+                
+                pdf.set_font("DejaVu", "", 16)
+                pdf.cell(0, 10, f"Raport Wydatkow - {date.today()}", ln=True, align='C')
+                pdf.set_font("DejaVu", "", 10)
                 
                 # Nagłówki PDF
-                cols = [30, 45, 25, 40, 40, 40]
+                cols = [30, 60, 25, 45, 40, 40]
                 headers = ["Data", "Sklep", "Kwota", "Status", "Metoda", "Osoba"]
                 for i, h in enumerate(headers):
                     pdf.cell(cols[i], 10, h, 1, 0, 'C')
                 pdf.ln()
                 
-                pdf.set_font("helvetica", "", 9)
+                pdf.set_font("DejaVu", "", 9)
                 for index, row in df_f.iterrows():
                     pdf.cell(cols[0], 8, str(row['data_zakupu']), 1)
-                    pdf.cell(cols[1], 8, str(row['sklep'])[:20], 1)
-                    pdf.cell(cols[2], 8, f"{row['kwota']:.2f}", 1, 0, 'R')
-                    pdf.cell(cols[3], 8, str(row['status'])[:18], 1)
-                    pdf.cell(cols[4], 8, str(row['metoda_platnosci'])[:18], 1)
+                    pdf.cell(cols[1], 8, str(row['sklep'])[:35], 1)
+                    pdf.cell(cols[2], 8, f"{row['kwota']:.2f} zl", 1, 0, 'R')
+                    
+                    # Czyszczenie statusu z emotikon, bo one też powodują błędy w PDF!
+                    status_clean = str(row['status']).replace('✅', '').strip()
+                    pdf.cell(cols[3], 8, status_clean[:22], 1)
+                    
+                    pdf.cell(cols[4], 8, str(row['metoda_platnosci'])[:20], 1)
                     pdf.cell(cols[5], 8, str(row['zgloszone_przez']), 1)
                     pdf.ln()
                 
