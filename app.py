@@ -51,7 +51,7 @@ else:
             st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: DODAWANIE WYDATKU
+    # ZAKŁADKA: DODAWANIE WYDATKU (PRZYWRÓCONE WSZYSTKIE POLA)
     # =========================================================================
     if menu == "➕ Dodaj Wydatek":
         st.title("➕ Dodaj nowy zakup")
@@ -62,7 +62,7 @@ else:
             brak_kwoty = col1.checkbox("Nie znam kwoty (?)")
             kwota = col1.number_input("💰 Kwota Brutto", min_value=0.0, step=0.01, format="%.2f", disabled=brak_kwoty)
             
-            brak_daty = col2.checkbox("Brak daty na dokumencie")
+            brak_daty = col2.checkbox("Brak daty (?)")
             data_zak = col2.date_input("📅 Data zakupu", date.today(), disabled=brak_daty)
             rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "Faktura PDF", "?"])
 
@@ -72,6 +72,12 @@ else:
             status = c2.selectbox("📌 Status płatności", ["Zapłacone", "Do opłacenia", "Przelew"])
             zrodlo = c3.selectbox("🏧 Źródło środków", ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"])
             
+            st.divider()
+            c4, c5, c6 = st.columns(3)
+            odbiorca = c4.text_input("👤 Kto odebrał?", value=st.session_state.uzytkownik)
+            platnik = c5.text_input("👤 Kto zapłacił?", value=st.session_state.uzytkownik)
+            typ_sklepu = c6.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
+
             projekt = st.text_input("🏗️ Projekt / Cel")
             uwagi = st.text_area("📝 Dodatkowe uwagi")
 
@@ -100,22 +106,23 @@ else:
                         supabase.table("wydatki").insert({
                             "sklep": sklep, "kwota": kwota_db, "data_zakupu": data_zak_str,
                             "rodzaj_dokumentu": rodzaj_doc, "metoda_platnosci": metoda, "status": status,
-                            "zrodlo_srodkow": zrodlo, "uwagi": f"PROJEKT: {projekt} | {uwagi}",
+                            "zrodlo_srodkow": zrodlo, "odbiorca": odbiorca, "platnik": platnik,
+                            "typ_sklepu": typ_sklepu, "uwagi": f"PROJEKT: {projekt} | {uwagi}",
                             "zdjecie_url": url_zdj, "zgloszone_przez": st.session_state.uzytkownik,
                             "miesiac_rok": miesiac_rok
                         }).execute()
                         st.success("Wydatek zapisany!"); time.sleep(1); st.rerun()
-                    except Exception as e: st.error(f"Błąd: {e}")
+                    except Exception as e: st.error(f"Błąd zapisu: {e}")
 
     # =========================================================================
-    # ZAKŁADKA: MOJE WYDATKI (Z PODGLĄDEM UWAG)
+    # ZAKŁADKA: MOJE WYDATKI (Z PODGLĄDEM UWAG I PEŁNĄ EDKCJĄ)
     # =========================================================================
     elif menu == "📂 Moje Wydatki":
         if st.session_state.rola == "admin":
-            st.title("📂 Wszystkie wydatki (Widok Admina)")
+            st.title("📂 Wszystkie wydatki (Admin)")
             res = supabase.table("wydatki").select("*").order("id", desc=True).execute()
         else:
-            st.title("📂 Twoja historia zakupów")
+            st.title("📂 Twoja historia")
             res = supabase.table("wydatki").select("*").eq("zgloszone_przez", st.session_state.uzytkownik).order("id", desc=True).execute()
         
         for r in (res.data or []):
@@ -130,8 +137,8 @@ else:
                 c2.subheader(kw_p)
                 c3.write(f"📅 {r['data_zakupu']}")
                 
-                # NOWOŚĆ: Podgląd uwag bezpośrednio na karcie
-                if r.get('uwagi'):
+                # PODGLĄD UWAG
+                if r.get('uwagi') and r.get('uwagi') != "PROJEKT:  | ":
                     st.markdown(f"**📝 Uwagi/Projekt:** *{r['uwagi']}*")
                 
                 if r.get('zdjecie_url'):
@@ -143,42 +150,72 @@ else:
                 col_b1, col_b2, col_b3 = st.columns([1,1,2])
                 if col_b1.button("🗑️ Usuń", key=f"d_{r['id']}"):
                     supabase.table("wydatki").delete().eq("id", r['id']).execute(); st.rerun()
-                if not rozl and col_b2.button("✅ Rozliczone z Marzeną", key=f"r_{r['id']}", type="primary"):
+                if not rozl and col_b2.button("✅ Rozlicz z Marzeną", key=f"r_{r['id']}", type="primary"):
                     supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute(); st.rerun()
-                if rozl and col_b2.button("↩️ Cofnij", key=f"c_{r['id']}"):
+                if rozl and col_b2.button("↩️ Cofnij rozliczenie", key=f"c_{r['id']}"):
                     supabase.table("wydatki").update({"status": "Zapłacone"}).eq("id", r['id']).execute(); st.rerun()
                 
                 with col_b3.expander("✏️ Edytuj wszystko"):
                     def g_idx(opt, val): return opt.index(val) if val in opt else 0
-                    e_s = st.text_input("Sklep", value=r['sklep'], key=f"e_s_{r['id']}")
-                    e_k = st.text_input("Kwota (wpisz ? dla braku)", value="?" if float(r['kwota']) == 0.0 else str(r['kwota']), key=f"e_k_{r['id']}")
-                    e_d = st.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"e_d_{r['id']}")
+                    
+                    e1, e2 = st.columns(2)
+                    e_s = e1.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
+                    e_k = e2.text_input("Kwota (wpisz ? dla braku)", value="?" if float(r['kwota']) == 0.0 else str(r['kwota']), key=f"ek_{r['id']}")
+                    
+                    e3, e4, e5 = st.columns(3)
+                    e_d = e3.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                    o_doc = ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "Faktura PDF", "?"]
+                    e_doc = e4.selectbox("Rodzaj dok.", o_doc, index=g_idx(o_doc, r.get('rodzaj_dokumentu')), key=f"er_{r['id']}")
+                    o_typ = ["Stacjonarny", "Internetowy"]
+                    e_typ = e5.selectbox("Miejsce", o_typ, index=g_idx(o_typ, r.get('typ_sklepu')), key=f"et_{r['id']}")
+                    
+                    e6, e7, e8 = st.columns(3)
+                    o_met = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
+                    e_met = e6.selectbox("Metoda", o_met, index=g_idx(o_met, r.get('metoda_platnosci')), key=f"em_{r['id']}")
                     o_st = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
-                    e_st = st.selectbox("Status", o_st, index=g_idx(o_st, r['status']), key=f"e_st_{r['id']}")
-                    e_u = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"e_u_{r['id']}")
-                    if st.button("💾 Zapisz zmiany", key=f"save_{r['id']}", type="primary"):
+                    e_st = e7.selectbox("Status", o_st, index=g_idx(o_st, r.get('status')), key=f"est_{r['id']}")
+                    o_zr = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                    e_zr = e8.selectbox("Źródło", o_zr, index=g_idx(o_zr, r.get('zrodlo_srodkow')), key=f"ez_{r['id']}")
+
+                    e9, e10 = st.columns(2)
+                    e_odb = e9.text_input("Odbiorca", value=r.get('odbiorca',''), key=f"eo_{r['id']}")
+                    e_pla = e10.text_input("Płatnik", value=r.get('platnik',''), key=f"ep_{r['id']}")
+
+                    e_u = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"eu_{r['id']}")
+                    
+                    if st.button("💾 Zapisz zmiany", key=f"save_{r['id']}", type="primary", use_container_width=True):
                         n_kw = 0.0 if e_k == "?" else float(e_k.replace(",", "."))
-                        supabase.table("wydatki").update({"sklep": e_s, "kwota": n_kw, "data_zakupu": e_d, "status": e_st, "uwagi": e_u}).eq("id", r['id']).execute(); st.rerun()
+                        supabase.table("wydatki").update({
+                            "sklep": e_s, "kwota": n_kw, "data_zakupu": e_d,
+                            "rodzaj_dokumentu": e_doc, "typ_sklepu": e_typ, "metoda_platnosci": e_met,
+                            "status": e_st, "zrodlo_srodkow": e_zr, "odbiorca": e_odb,
+                            "platnik": e_pla, "uwagi": e_u
+                        }).eq("id", r['id']).execute(); st.rerun()
 
     # =========================================================================
-    # ZAKŁADKA: RAPORTY (ROZBUDOWANE FILTRY I ŁADNY EXCEL)
+    # ZAKŁADKA: RAPORTY (PANCERNA WYSZUKIWARKA I EXCEL)
     # =========================================================================
     elif menu == "📊 Raporty i Księgowość":
-        st.title("📊 Rozbudowana Wyszukiwarka i Raporty")
+        st.title("📊 Wyszukiwarka i Raporty")
         res = supabase.table("wydatki").select("*").execute()
         if res.data:
             df = pd.DataFrame(res.data)
-            df['kwota'] = df['kwota'].astype(float)
             
-            with st.container(border=True):
-                st.subheader("🔍 Filtry")
+            # Bezpieczne formatowanie danych przed filtrowaniem
+            df['kwota'] = df['kwota'].fillna(0).astype(float)
+            df['data_zakupu'] = df['data_zakupu'].astype(str).fillna("?")
+            df['status'] = df['status'].astype(str).fillna("")
+            df['zgloszone_przez'] = df['zgloszone_przez'].astype(str).fillna("")
+            df['metoda_platnosci'] = df['metoda_platnosci'].astype(str).fillna("")
+
+            with st.expander("🔍 FILTRY WYSZUKIWANIA", expanded=True):
                 c1, c2, c3 = st.columns(3)
                 
                 # 1. Zakres dat
                 f_zakres = c1.date_input("📅 Zakres dat", [date(2024,1,1), date.today()])
                 
                 # 2. Rok i Miesiąc
-                lata = sorted(list(set([str(d)[:4] for d in df['data_zakupu'] if len(str(d))>=4])), reverse=True)
+                lata = sorted(list(set([str(d)[:4] for d in df['data_zakupu'] if len(str(d))>=4 and str(d)[:4].isdigit()])), reverse=True)
                 f_rok = c2.selectbox("📅 Rok", ["Wszystkie"] + lata)
                 miesiace = ["Wszystkie", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12"]
                 f_mies = c3.selectbox("📅 Miesiąc", miesiace)
@@ -192,52 +229,67 @@ else:
                 metody = sorted(df['metoda_platnosci'].unique().tolist())
                 f_met = c5.multiselect("💳 Rodzaj płatności", metody, default=metody)
                 
-                # 5. Czy rozliczone z Marzeną
+                # 5. Rozliczone?
                 f_rozl = c6.selectbox("🤝 Rozliczone z Marzeną?", ["Wszystkie", "TAK (✅)", "NIE"])
+                
+                # 6. Kwota +- 30
+                f_kwota = st.number_input("💰 Szukaj kwoty (±30 zł)", min_value=0.0)
 
-            # --- LOGIKA FILTROWANIA ---
+            # --- LOGIKA FILTROWANIA (BEZ BŁĘDÓW) ---
             df_f = df.copy()
+            
             if len(f_zakres) == 2:
+                # Wyrzucamy na chwilę znaki zapytania, żeby nie wywaliło kalendarza
                 df_f = df_f[df_f['data_zakupu'] != '?']
-                df_f['temp_d'] = pd.to_datetime(df_f['data_zakupu']).dt.date
+                df_f['temp_d'] = pd.to_datetime(df_f['data_zakupu'], errors='coerce').dt.date
+                df_f = df_f.dropna(subset=['temp_d']) # Usuwamy błędy dat
                 df_f = df_f[(df_f['temp_d'] >= f_zakres[0]) & (df_f['temp_d'] <= f_zakres[1])]
             
-            if f_rok != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.startswith(f_rok)]
-            if f_mies != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.contains(f"-{f_mies}-")]
+            if f_rok != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.startswith(f_rok, na=False)]
+            if f_mies != "Wszystkie": df_f = df_f[df_f['data_zakupu'].str.contains(f"-{f_mies}-", na=False)]
+            
             df_f = df_f[df_f['zgloszone_przez'].isin(f_prac)]
             df_f = df_f[df_f['metoda_platnosci'].isin(f_met)]
             
-            if f_rozl == "TAK (✅)": df_f = df_f[df_f['status'].str.contains("✅")]
-            elif f_rozl == "NIE": df_f = df_f[~df_f['status'].str.contains("✅")]
+            if f_rozl == "TAK (✅)": df_f = df_f[df_f['status'].str.contains("✅", na=False)]
+            elif f_rozl == "NIE": df_f = df_f[~df_f['status'].str.contains("✅", na=False)]
+            
+            if f_kwota > 0:
+                df_f = df_f[(df_f['kwota'] >= f_kwota - 30) & (df_f['kwota'] <= f_kwota + 30)]
 
             st.divider()
             m1, m2 = st.columns(2)
             m1.metric("Suma wybranych", f"{df_f['kwota'].sum():.2f} zł")
-            do_zw = df_f[(df_f['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & (~df_f['status'].str.contains('✅'))]
+            do_zw = df_f[(df_f['zrodlo_srodkow'].isin(['Karta prywatna', 'Gotówka'])) & (~df_f['status'].str.contains('✅', na=False))]
             m2.metric("Do zwrotu (Pryw/Got)", f"{do_zw['kwota'].sum():.2f} zł")
             
             st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']], use_container_width=True)
             
-            # --- ŁADNY EXCEL (.xlsx) ---
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']].to_excel(writer, index=False, sheet_name='Raport')
-                workbook = writer.book
-                worksheet = writer.sheets['Raport']
-                
-                # Formatowanie nagłówków
-                header_format = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
-                for col_num, value in enumerate(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']].columns.values):
-                    worksheet.write(0, col_num, value, header_format)
-                worksheet.set_column(0, 6, 18) # Szerokość kolumn
-            
             st.divider()
-            st.subheader("📥 Pobierz raporty")
+            st.subheader("📥 Pobierz raporty do księgowości")
             c_ex1, c_ex2 = st.columns(2)
-            c_ex1.download_button("📊 Pobierz ŁADNY EXCEL (.xlsx)", data=buffer.getvalue(), file_name=f"raport_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
             
-            html = f"<html><style>table{{width:100%;border-collapse:collapse;}}th,td{{border:1px solid #ddd;padding:8px;text-align:left;}}th{{background:#f2f2f2;}}</style><body><h2>Raport Wydatków</h2>{df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez', 'uwagi']].to_html(index=False)}</body></html>"
-            c_ex2.download_button("📄 Pobierz PDF (HTML)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html", use_container_width=True)
+            # --- BEZPIECZNY ŁADNY EXCEL ---
+            try:
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']].to_excel(writer, index=False, sheet_name='Raport')
+                    workbook = writer.book
+                    worksheet = writer.sheets['Raport']
+                    
+                    header_format = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1})
+                    for col_num, value in enumerate(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']].columns.values):
+                        worksheet.write(0, col_num, value, header_format)
+                    worksheet.set_column(0, 6, 18) 
+                
+                c_ex1.download_button("📊 Pobierz ŁADNY EXCEL (.xlsx)", data=buffer.getvalue(), file_name=f"raport_{date.today()}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", use_container_width=True)
+            except ModuleNotFoundError:
+                c_ex1.error("Brak wtyczki Excel. Użyj przycisku CSV lub dodaj 'xlsxwriter' w ustawieniach.")
+                csv = '\ufeff'.encode('utf8') + df_f.to_csv(index=False, sep=';').encode('utf-8')
+                c_ex1.download_button("📊 Pobierz ZWYKŁY EXCEL (CSV)", data=csv, file_name=f"raport_{date.today()}.csv", mime="text/csv", use_container_width=True)
+            
+            html = f"<html><style>table{{width:100%;border-collapse:collapse;font-family:sans-serif;}}th,td{{border:1px solid #ddd;padding:8px;text-align:left;}}th{{background:#f2f2f2;}}</style><body><h2>Raport Wydatków (Fakturki-Tejbrant)</h2><p>Wygenerowano: {datetime.now().strftime('%Y-%m-%d %H:%M')}</p>{df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez', 'uwagi']].to_html(index=False)}</body></html>"
+            c_ex2.download_button("📄 Pobierz PDF (HTML do druku)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html", use_container_width=True)
 
     # =========================================================================
     # ZAKŁADKA: ZARZĄDZANIE KONTAMI
@@ -266,5 +318,5 @@ else:
         st.title("📖 Pomoc Fakturki-Tejbrant")
         st.markdown("---")
         st.success("**✅ Rozliczenia:** Każda pozycja oznaczona 'Rozliczone z Marzeną' przestaje być liczona w polu 'Do zwrotu'.")
-        st.info("**📈 Excel:** Nowy przycisk pobiera plik XLSX z formatowaniem, który od razu nadaje się do wysłania do księgowości.")
+        st.info("**📈 Excel:** Kliknij 'Pobierz Ładny Excel', aby uzyskać arkusz z od razu dopasowanymi kolumnami.")
         st.warning("**❓ Puste pola:** Jeśli kwota lub data jest nieczytelna, użyj '?', aby móc zapisać dokument i wrócić do niego później.")
