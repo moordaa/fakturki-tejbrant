@@ -155,74 +155,74 @@ else:
         res = supabase.table("wydatki").select("*").execute()
         if res.data:
             df = pd.DataFrame(res.data)
- df[„kwota"] = df[„kwota"].astype(platforma)
+            df['kwota'] = df['kwota'].astype(float)
             
-            z st.ekspander(„🔍 FILTRY WYSZUKIWANIA", rozszerzony=Prawdziwy):
- f1, f2, f3 = st.kolumny(3)
- f_zakresa = f1.data_wejścia(„Zakres dat", [data(2026,1,1), data.dzisiaj()])
- praktyka = posortowane(df['zgloszone_przez'].wyjątkowy().tolista())
- f_prac = f2.multiselect(„Pracownik", pracownicy, domyślnie=pracownicy)
- f_kw = f3.liczba_wejścia(„Kwota ±30 zł", min_wartość=0,0)
+            with st.expander("🔍 FILTRY WYSZUKIWANIA", expanded=True):
+                f1, f2, f3 = st.columns(3)
+                f_zakres = f1.date_input("Zakres dat", [date(2026,1,1), date.today()])
+                pracownicy = sorted(df['zgloszone_przez'].unique().tolist())
+                f_prac = f2.multiselect("Pracownik", pracownicy, default=pracownicy)
+                f_kw = f3.number_input("Kwota ±30 zł", min_value=0.0)
 
- df_f = df[df['zgloszone_przez'].isin(f_prac)]
-            jeśli f_kw > 0: df_f = df_f[(df_f[„kwota"] >= f_kw - 30) & (df_f[„kwota"] <= f_kw + 30)]
+            df_f = df[df['zgloszone_przez'].isin(f_prac)]
+            if f_kw > 0: df_f = df_f[(df_f['kwota'] >= f_kw - 30) & (df_f['kwota'] <= f_kw + 30)]
 
- m1, m2 = st.kolumny(2)
- m1.metryka(„Suma Wybranych", f"{df_f[„kwota"].suma():. .2f} zł")
- do_zw = df_f[(df_f[„zrodlo_srodkow"] == „Prywatne") & (~df_f['status'].str.zawiera('✅'))]
- m2.metryka(„Do zwotu", f"{do_zw[„kwota"].suma():. .2f} zł")
+            m1, m2 = st.columns(2)
+            m1.metric("Suma wybranych", f"{df_f['kwota'].sum():.2f} zł")
+            do_zw = df_f[(df_f['zrodlo_srodkow'] == 'Prywatne') & (~df_f['status'].str.contains('✅'))]
+            m2.metric("Do zwrotu", f"{do_zw['kwota'].sum():.2f} zł")
             
- st.ramka danych(df_f[['data_zakupu', „sklep", „kwota", 'status', 'zgloszone_przez']], użyj_szerokości_kontenera=Prawdziwy)
+            st.dataframe(df_f[['data_zakupu', 'sklep', 'kwota', 'status', 'zgloszone_przez']], use_container_width=True)
             
             # STYLIZOWANY RAPORT HTML (DO DRUKU PDF)
- html = f"""
- <styl>
- body {{ rodzina czcionek: bezszeryfowa; kolor: #333; }}
- tabela {{ szerokość: 100%; zwinięcie granicy: zwinięcie; }}
- th {{ tło: #f4f4f4; wypełnienie: 10px; obramowanie: 1px pełne #ddd; }}
- td {{ wypełnienie: 10px; obramowanie: 1px solidne #ddd; }}
- .rozl {{ tło: #e8f5e9; }}
- </style>
- <h2>Raport Wydatków Firmowych</h2>
- <p>Wygenerowano: {datetime.teraz().strftime('%d.%m.%Y %H:%M')}</p>
- <tabela>
- <tr><th>Data</th><th>Sklep</th><th>Kwota</th><th>Osoba</th><th>Status</th></tr>
-                {"".dołącz([f"<tr class='{'rozl' jeśli '✅' w str(wiersz['status']) inny ''}'><td>{wiersz['data_zakupu']}</td><td>{wiersz[„sklep"]}</td><td>{wiersz[„kwota"]:.2f} zł</td><td>{wiersz['zgloszone_przez']}</td><td>{wiersz['status']}</td></tr>" for _, wiersz in df_f.iterrows()])}
- </tabela>
- """
- st.przycisk_pobierania(„📄 Pobierz Raport do druku (HTML/PDF)”, dane=html.zakodowany(„utf-8"), nazwa_pliku=„raport.html", mim=„tekst/html")
+            html = f"""
+            <style>
+                body {{ font-family: sans-serif; color: #333; }}
+                table {{ width: 100%; border-collapse: collapse; }}
+                th {{ background: #f4f4f4; padding: 10px; border: 1px solid #ddd; }}
+                td {{ padding: 10px; border: 1px solid #ddd; }}
+                .rozl {{ background: #e8f5e9; }}
+            </style>
+            <h2>Raport Wydatków Firmowych</h2>
+            <p>Wygenerowano: {datetime.now().strftime('%d.%m.%Y %H:%M')}</p>
+            <table>
+                <tr><th>Data</th><th>Sklep</th><th>Kwota</th><th>Osoba</th><th>Status</th></tr>
+                {"".join([f"<tr class='{'rozl' if '✅' in str(row['status']) else ''}'><td>{row['data_zakupu']}</td><td>{row['sklep']}</td><td>{row['kwota']:.2f} zł</td><td>{row['zgloszone_przez']}</td><td>{row['status']}</td></tr>" for _, row in df_f.iterrows()])}
+            </table>
+            """
+            st.download_button("📄 Pobierz Raport do druku (HTML/PDF)", data=html.encode('utf-8'), file_name="raport.html", mime="text/html")
 
-    # ===============================================================
+    # =========================================================================
     # ZAKŁADKA: KONTA (ZARZĄDZANIE)
-    # ===============================================================
-    elif menu == „👥 Zarządzanie Kontami”:
- st.tytuł(„👥 Pracownicy i Dęstępy")
-        z st.pojemnik(granica=Prawdziwy):
- st.podnagłówek(„➕ Dodaj nowe konto")
- cc1, cc2, cc3 = st.kolumny(3)
- nl = cc1.wejście_tekstu(„Zaloguj się”)
- np = cc2.wejście_tekstu(„Hasło”)
- nr = cc3.pole wyboru(„Rola", [„użytkownik”, „admin"])
-            jeśli st.przycisk(„Utwórz konto"):
- supabaz.tabela(„fakturki_konta").wstawić({„zaloguj się”:nl, „haslo": np, „rola": nr}).wykonać()
- st.sukces(„Dodano!"); czas.spać(1); st.rerun()
+    # =========================================================================
+    elif menu == "👥 Zarządzanie Kontami":
+        st.title("👥 Pracownicy i Dęstępy")
+        with st.container(border=True):
+            st.subheader("➕ Dodaj nowe konto")
+            cc1, cc2, cc3 = st.columns(3)
+            nl = cc1.text_input("Login")
+            np = cc2.text_input("Hasło")
+            nr = cc3.selectbox("Rola", ["użytkownik", "admin"])
+            if st.button("Utwórz konto"):
+                supabase.table("fakturki_konta").insert({"login": nl, "haslo": np, "rola": nr}).execute()
+                st.success("Dodano!"); time.sleep(1); st.rerun()
 
- res_p = supabaza.tabela(„fakturki_konta").wybierz("*").wykonać()
-        dla p w res_p.dane:
-            z st.pojemnik(granica=Prawdziwy):
- col_i, col_b = st.kolumny([4, 1])
- col_i.pisać(f"👤 **{p['logowanie']}** | Hasło: `{p[„haslo"]}` | Rola: `{p[„rola"]}`")
-                jeśli p['logowanie'] nie w [„Emil", „Emil"] i col_b.przycisk("Usuń", klucz=f"dp_{p['logowanie']}"):
- supabaz.tabela(„fakturki_konta").usuń().równanie(„zaloguj się”, p['logowanie']).wykonać(); st.rerun()
+        res_p = supabase.table("fakturki_konta").select("*").execute()
+        for p in res_p.data:
+            with st.container(border=True):
+                col_i, col_b = st.columns([4, 1])
+                col_i.write(f"👤 **{p['login']}** | Hasło: `{p['haslo']}` | Rola: `{p['rola']}`")
+                if p['login'] not in ["Emil", "emil"] and col_b.button("Usuń", key=f"dp_{p['login']}"):
+                    supabase.table("fakturki_konta").delete().eq("login", p['login']).execute(); st.rerun()
 
-    # ===============================================================
+    # =========================================================================
     # ZAKŁADKA: INSTRUKCJA
-    # ===============================================================
-    elif menu == „📖 Instrukcja":
- st.tytuł(„📖 Pomoc Fakturki-Tejbrant")
- st.info("💡 **Sesja:** Nie musi sić wylogowywać. Po prostu zamknij przeglądarkę.")
- st.markdown("""
- * **Kwota (?):** Znak zapytania zapasuje 0,0 zł, autorstwa nie blokowatego bazy.
- * **Rozliczenia:** Status z zielonym ptaszkiem ✅ odejmuje kwoć z licznika 'Do zwrotu'.
- * **PDF:** Raporty można pobierać w formie ładniej tabeli gotowej do druku.
- """)
+    # =========================================================================
+    elif menu == "📖 Instrukcja":
+        st.title("📖 Pomoc Fakturki-Tejbrant")
+        st.info("💡 **Sesja:** Nie musisz się wylogowywać. Po prostu zamknij przeglądarkę.")
+        st.markdown("""
+        * **Kwota (?):** Znak zapytania zapisuje 0.0 zł, by nie blokować bazy.
+        * **Rozliczenia:** Status z zielonym ptaszkiem ✅ odejmuje kwotę z licznika 'Do zwrotu'.
+        * **PDF:** Raporty można pobierać w formie ładnej tabeli gotowej do druku.
+        """)
