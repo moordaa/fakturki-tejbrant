@@ -12,8 +12,8 @@ from fpdf import FPDF
 # --- KONFIGURACJA ---
 # UWAGA: Ze względów bezpieczeństwa w środowisku produkcyjnym 
 # zaleca się przeniesienie URL i KEY do pliku .streamlit/secrets.toml
-URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
-KEY = "sb_publishable_aPIiW1rzHtM3vGcVaUuN-w_R9MadPTt"
+URL = st.secrets["SUPABASE_URL"]
+KEY = st.secrets["SUPABASE_KEY"]
 
 supabase: Client = create_client(URL, KEY)
 
