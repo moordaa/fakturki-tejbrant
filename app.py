@@ -10,8 +10,6 @@ import uuid
 from fpdf import FPDF
 
 # --- KONFIGURACJA ---
-# UWAGA: Ze względów bezpieczeństwa w środowisku produkcyjnym 
-# zaleca się przeniesienie URL i KEY do pliku .streamlit/secrets.toml
 URL = st.secrets["SUPABASE_URL"]
 KEY = st.secrets["SUPABASE_KEY"]
 
@@ -46,6 +44,7 @@ if not st.session_state.zalogowany:
 else:
     # --- MENU BOCZNE ---
     with st.sidebar:
+        st.markdown("## 🧾 Fakturki")
         st.success(f"Zalogowano: **{st.session_state.uzytkownik}**")
         st.divider()
         opcje = ["➕ Dodaj Wydatek", "📂 Moje Wydatki", "📊 Raporty i Księgowość", "📖 Instrukcja"]
@@ -162,16 +161,41 @@ else:
                 
                 with col_b3.expander("✏️ Edytuj wszystko"):
                     def g_idx(opt, val): return opt.index(val) if val in opt else 0
-                    e1, e2 = st.columns(2)
+                    
+                    e1, e2, e3 = st.columns(3)
                     e_s = e1.text_input("Sklep", value=r['sklep'], key=f"es_{r['id']}")
-                    e_k = e2.text_input("Kwota (wpisz ? dla braku)", value="?" if float(r['kwota']) == 0.0 else str(r['kwota']), key=f"ek_{r['id']}")
-                    e_d = st.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                    e_k = e2.text_input("Kwota (wpisz ?)", value="?" if float(r['kwota']) == 0.0 else str(r['kwota']), key=f"ek_{r['id']}")
+                    e_d = e3.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
+                    
+                    o_rd = ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "Faktura PDF", "?"]
+                    e_rd = st.selectbox("Rodzaj dokumentu", o_rd, index=g_idx(o_rd, r.get('rodzaj_dokumentu', '?')), key=f"erd_{r['id']}")
+                    
+                    c_e1, c_e2, c_e3 = st.columns(3)
+                    o_mp = ["Karta firmowa", "Karta prywatna", "Gotówka", "Pro forma", "Przelew"]
+                    e_mp = c_e1.selectbox("Metoda płatności", o_mp, index=g_idx(o_mp, r.get('metoda_platnosci', 'Karta firmowa')), key=f"emp_{r['id']}")
+                    
                     o_st = ["Zapłacone", "Do opłacenia", "Rozliczone z Marzeną ✅", "Przelew"]
-                    e_st = st.selectbox("Status", o_st, index=g_idx(o_st, r['status']), key=f"e_st_{r['id']}")
-                    e_u = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"e_u_{r['id']}")
-                    if st.button("💾 Zapisz zmiany", key=f"save_{r['id']}", type="primary"):
-                        n_kw = 0.0 if e_k == "?" else float(e_k.replace(",", "."))
-                        supabase.table("wydatki").update({"sklep": e_s, "kwota": n_kw, "data_zakupu": e_d, "status": e_st, "uwagi": e_u}).eq("id", r['id']).execute(); st.rerun()
+                    e_st = c_e2.selectbox("Status", o_st, index=g_idx(o_st, r.get('status', 'Zapłacone')), key=f"est_{r['id']}")
+                    
+                    o_zs = ["Karta firmowa", "Karta prywatna", "Gotówka", "Konto firmowe"]
+                    e_zs = c_e3.selectbox("Źródło środków", o_zs, index=g_idx(o_zs, r.get('zrodlo_srodkow', 'Karta firmowa')), key=f"ezs_{r['id']}")
+
+                    c_e4, c_e5, c_e6 = st.columns(3)
+                    e_odb = c_e4.text_input("Kto odebrał?", value=r.get('odbiorca', ''), key=f"eodb_{r['id']}")
+                    e_pla = c_e5.text_input("Kto zapłacił?", value=r.get('platnik', ''), key=f"epla_{r['id']}")
+                    o_ts = ["Stacjonarny", "Internetowy"]
+                    e_ts = c_e6.selectbox("Miejsce zakupu", o_ts, index=g_idx(o_ts, r.get('typ_sklepu', 'Stacjonarny')), key=f"ets_{r['id']}")
+
+                    e_u = st.text_area("Uwagi / Projekt", value=r.get('uwagi', ''), key=f"eu_{r['id']}")
+                    
+                    if st.button("💾 Zapisz wszystkie zmiany", key=f"save_{r['id']}", type="primary", use_container_width=True):
+                        n_kw = 0.0 if e_k == "?" else float(str(e_k).replace(",", "."))
+                        supabase.table("wydatki").update({
+                            "sklep": e_s, "kwota": n_kw, "data_zakupu": e_d, "rodzaj_dokumentu": e_rd,
+                            "metoda_platnosci": e_mp, "status": e_st, "zrodlo_srodkow": e_zs,
+                            "odbiorca": e_odb, "platnik": e_pla, "typ_sklepu": e_ts, "uwagi": e_u
+                        }).eq("id", r['id']).execute()
+                        st.rerun()
 
     # =========================================================================
     # ZAKŁADKA: RAPORTY
@@ -272,7 +296,7 @@ else:
                             self.set_font('helvetica', 'B', 16)
                             
                         self.set_text_color(255, 255, 255)
-                        tytul = f"Raport Wydatków Emila- wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
+                        tytul = f"Raport Wydatków - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
                         self.cell(0, 10, self.clean_text(tytul), ln=True, align='C')
                         self.ln(10)
 
@@ -338,7 +362,7 @@ else:
                     if fill: pdf.set_fill_color(245, 245, 245)
                     else: pdf.set_fill_color(255, 255, 255)
                     
-                    # Delikatnie przycięte teksty dla węższych kolumn pionowych
+                    # Delikatnie przycięte tektexts dla węższych kolumn pionowych
                     pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:30]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zł"), border='B', align='R', fill=True)
@@ -382,6 +406,19 @@ else:
     # ZAKŁADKA: INSTRUKCJA
     # =========================================================================
     elif menu == "📖 Instrukcja":
-        st.title("📖 Pomoc")
-        st.success("**✅ Rozliczenia:** Każda pozycja oznaczona 'Rozliczone z Marzeną' przestaje być liczona w polu 'Do zwrotu'.")
-        st.info("**📈 Excel:** Plik LUX EXCEL ma kolory, dopasowane kolumny i jest gotowy do druku na A4.")
+        st.title("📖 Instrukcja Obsługi Systemu")
+        
+        st.markdown("### ➕ Dodawanie wydatków")
+        st.markdown("- **Dokumenty:** Używaj aparatu telefonu do szybkiego skanowania paragonów lub wgrywaj gotowe pliki PDF/JPG z komputera.")
+        st.markdown("- **Braki w danych:** Jeśli w momencie dodawania nie znasz dokładnej kwoty lub daty, zaznacz okienka *'Brak daty'* lub *'Nie znam kwoty'*. System wstawi znak `?`, co ułatwi późniejsze uzupełnienie danych.")
+        
+        st.markdown("### 📂 Historia i Edycja")
+        st.markdown("- **Pełna kontrola:** W zakładce *Moje Wydatki* możesz w dowolnej chwili rozwinąć opcję `✏️ Edytuj wszystko`, aby skorygować każdą wprowadzoną informację.")
+        st.markdown("- **Rozliczenia z księgowością:** Oznaczaj zrealizowane dokumenty zielonym przyciskiem `✅ Rozlicz z Marzeną`. ")
+        
+        st.markdown("### 📊 Raportowanie")
+        st.markdown("- **Wyszukiwarka:** Filtruj wydatki według dat, osób, metod płatności czy statusu rozliczenia.")
+        st.markdown("- **Eksport do Excela (.xlsx):** Generuje elegancki arkusz kalkulacyjny z gotowym formatowaniem walutowym, dopasowanymi szerokościami kolumn i kolorowym nagłówkiem. Plik jest automatycznie sformatowany do wydruku w poziomie (A4).")
+        st.markdown("- **Eksport do PDF:** Tworzy zwarty, pionowy raport z układem zebry (na przemian szare i białe wiersze) ułatwiający czytanie.")
+        
+        st.info("**💡 Ważna zasada:** Wszystkie wydatki, którym nadasz status *'Rozliczone z Marzeną ✅'*, automatycznie przestają być wliczane do sumy w polu *'Do zwrotu'* w module raportowym.")
