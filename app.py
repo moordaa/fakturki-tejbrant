@@ -116,7 +116,14 @@ else:
                             "zdjecie_url": url_zdj, "zgloszone_przez": st.session_state.uzytkownik,
                             "miesiac_rok": miesiac_rok
                         }).execute()
-                        st.success("Wydatek zapisany!"); time.sleep(1); st.rerun()
+                        
+                        # --- WYRAŹNE POWIADOMIENIE ---
+                        st.balloons()  # Wypuszcza balony na ekranie
+                        st.toast("✅ Zapisano w bazie danych!", icon="💾")  # Powiadomienie w rogu
+                        st.success("🎉 WYDATEK ZOSTAŁ POMYŚLNIE DODANY!", icon="✅") # Duży zielony baner
+                        time.sleep(2)  # Czeka 2 sekundy, żebyś zdążył to zobaczyć
+                        st.rerun()
+                        
                     except Exception as e: st.error(f"Błąd zapisu: {e}")
 
     # =========================================================================
