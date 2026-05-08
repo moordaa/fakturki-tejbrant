@@ -159,8 +159,13 @@ else:
 
                 st.divider()
                 col_b1, col_b2, col_b3 = st.columns([1,1,2])
-                if col_b1.button("🗑️ Usuń", key=f"d_{r['id']}"):
-                    supabase.table("wydatki").delete().eq("id", r['id']).execute(); st.rerun()
+                
+                # --- POTWIERDZENIE USUNIĘCIA (POPOVER) ---
+                with col_b1.popover("🗑️ Usuń"):
+                    st.warning("Czy na pewno chcesz usunąć?")
+                    if st.button("Tak, usuń trwale", key=f"d_potw_{r['id']}", type="primary", use_container_width=True):
+                        supabase.table("wydatki").delete().eq("id", r['id']).execute()
+                        st.rerun()
                 if not rozl and col_b2.button("✅ Rozlicz z Marzeną", key=f"r_{r['id']}", type="primary"):
                     supabase.table("wydatki").update({"status": "Rozliczone z Marzeną ✅"}).eq("id", r['id']).execute(); st.rerun()
                 if rozl and col_b2.button("↩️ Cofnij", key=f"c_{r['id']}"):
