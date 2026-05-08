@@ -273,7 +273,7 @@ else:
                             self.set_font('helvetica', 'B', 16)
                             
                         self.set_text_color(255, 255, 255)
-                        tytul = f"Raport Wydatków - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
+                        tytul = f"Raport Wydatków Emila - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
                         self.cell(0, 10, self.clean_text(tytul), ln=True, align='C')
                         self.ln(10)
 
