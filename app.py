@@ -6,9 +6,12 @@ from datetime import datetime, date
 import pandas as pd
 import time
 import io
+import uuid
 from fpdf import FPDF
 
 # --- KONFIGURACJA ---
+# UWAGA: Ze względów bezpieczeństwa w środowisku produkcyjnym 
+# zaleca się przeniesienie URL i KEY do pliku .streamlit/secrets.toml
 URL = "https://hdmptdcuqxqutfgrgmrj.supabase.co"
 KEY = "sb_publishable_aPIiW1rzHtM3vGcVaUuN-w_R9MadPTt"
 
@@ -97,7 +100,8 @@ else:
                         with st.spinner("Wgrywanie dokumentu..."):
                             d_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
                             ext = plik_u.name.split('.')[-1].lower() if plik_u else "jpg"
-                            d_nazwa = f"faktura_{int(time.time())}.{ext}"
+                            # Dodano uuid dla uniknięcia nadpisywania plików o tej samej sekundzie
+                            d_nazwa = f"faktura_{int(time.time())}_{uuid.uuid4().hex[:8]}.{ext}"
                             supabase.storage.from_("faktury_zdjecia").upload(d_nazwa, d_bytes)
                             url_zdj = supabase.storage.from_("faktury_zdjecia").get_public_url(d_nazwa)
 
@@ -255,69 +259,102 @@ else:
             except:
                 c_ex1.error("Błąd wtyczki Excel. Sprawdź requirements.txt na GitHubie.")
 
-            # --- NIEZAWODNY PDF ---
+            # --- ELEGANCKI PDF ---
             try:
+                class ElegantPDF(FPDF):
+                    def header(self):
+                        # Pasek dekoracyjny na górze
+                        self.set_fill_color(211, 47, 47)  # Kolor czerwony
+                        self.rect(0, 0, 297, 20, 'F') 
+                        
+                        if hasattr(self, 'font_ready') and self.font_ready:
+                            self.set_font('Roboto', '', 16)
+                        else:
+                            self.set_font('helvetica', 'B', 16)
+                            
+                        self.set_text_color(255, 255, 255)
+                        tytul = f"Raport Wydatków - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
+                        self.cell(0, 10, self.clean_text(tytul), ln=True, align='C')
+                        self.ln(10)
+
+                    def footer(self):
+                        self.set_y(-15)
+                        if hasattr(self, 'font_ready') and self.font_ready:
+                            self.set_font('Roboto', '', 8)
+                        else:
+                            self.set_font('helvetica', 'I', 8)
+                        self.set_text_color(128, 128, 128)
+                        self.cell(0, 10, f'Strona {self.page_no()} / {{nb}}', align='C')
+
+                    def clean_text(self, tekst):
+                        t = str(tekst).replace('✅', '').strip()
+                        if not hasattr(self, 'font_ready') or not self.font_ready:
+                            zamienniki = {'ą':'a', 'ć':'c', 'ę':'e', 'ł':'l', 'ń':'n', 'ó':'o', 'ś':'s', 'ź':'z', 'ż':'z',
+                                          'Ą':'A', 'Ć':'C', 'Ę':'E', 'Ł':'L', 'Ń':'N', 'Ó':'O', 'Ś':'S', 'Ź':'Z', 'Ż':'Z'}
+                            for pl, asc in zamienniki.items():
+                                t = t.replace(pl, asc)
+                        return t
+
+                # Przygotowanie czcionek
                 font_path = "Roboto-Regular.ttf"
                 font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
-                
-                # Próba pobrania stabilnej czcionki z Google Fonts
                 if not os.path.exists(font_path):
-                    try:
-                        urllib.request.urlretrieve(font_url, font_path)
-                    except:
-                        pass # Jeśli sieć zablokuje, zignoruj błąd i przejdź do trybu awaryjnego
+                    try: urllib.request.urlretrieve(font_url, font_path)
+                    except: pass
+
+                pdf = ElegantPDF(orientation='L', unit='mm', format='A4')
+                pdf.alias_nb_pages()
                 
-                pdf = FPDF(orientation='L', unit='mm', format='A4')
-                pdf.add_page()
-                
-                # Ustalenie czy mamy polską czcionkę, czy używamy trybu awaryjnego bez ogonków
+                # Konfiguracja czcionki polskiej
                 if os.path.exists(font_path):
                     pdf.add_font('Roboto', '', font_path, uni=True)
-                    pdf.set_font('Roboto', '', 16)
-                    tryb_awaryjny = False
+                    pdf.font_ready = True
                 else:
-                    pdf.set_font('helvetica', 'B', 16)
-                    tryb_awaryjny = True
+                    pdf.font_ready = False
+
+                pdf.add_page()
                 
-                # Funkcja czyszcząca tekst (usuwa emotikony i w trybie awaryjnym ucina polskie ogonki)
-                def bezpieczny_tekst(tekst):
-                    t = str(tekst).replace('✅', '').strip()
-                    if tryb_awaryjny:
-                        zamienniki = {'ą':'a', 'ć':'c', 'ę':'e', 'ł':'l', 'ń':'n', 'ó':'o', 'ś':'s', 'ź':'z', 'ż':'z',
-                                      'Ą':'A', 'Ć':'C', 'Ę':'E', 'Ł':'L', 'Ń':'N', 'Ó':'O', 'Ś':'S', 'Ź':'Z', 'Ż':'Z'}
-                        for pl, asc in zamienniki.items():
-                            t = t.replace(pl, asc)
-                    return t
+                # Nagłówki tabeli
+                cols = [30, 65, 25, 45, 40, 45]
+                headers = ["Data", "Sklep / Dostawca", "Kwota", "Status", "Metoda", "Użytkownik"]
                 
-                pdf.cell(0, 10, bezpieczny_tekst(f"Raport Wydatkow - {date.today()}"), ln=True, align='C')
-                
-                if os.path.exists(font_path):
-                    pdf.set_font('Roboto', '', 10)
-                else:
-                    pdf.set_font('helvetica', 'B', 10)
-                
-                cols = [30, 60, 25, 45, 40, 40]
-                headers = ["Data", "Sklep", "Kwota", "Status", "Metoda", "Osoba"]
+                pdf.set_fill_color(60, 60, 60) # Ciemnoszary nagłówek tabeli
+                pdf.set_text_color(255, 255, 255)
+                if pdf.font_ready: pdf.set_font('Roboto', '', 10)
+                else: pdf.set_font('helvetica', 'B', 10)
+
                 for i, h in enumerate(headers):
-                    pdf.cell(cols[i], 10, bezpieczny_tekst(h), 1, 0, 'C')
+                    pdf.cell(cols[i], 10, pdf.clean_text(h), border=0, ln=0, align='C', fill=True)
                 pdf.ln()
+
+                # Dane - Efekt Zebry
+                pdf.set_text_color(0, 0, 0)
+                if pdf.font_ready: pdf.set_font('Roboto', '', 9)
+                else: pdf.set_font('helvetica', '', 9)
                 
-                if os.path.exists(font_path):
-                    pdf.set_font('Roboto', '', 9)
-                else:
-                    pdf.set_font('helvetica', '', 9)
-                    
+                fill = False
                 for index, row in df_f.iterrows():
-                    pdf.cell(cols[0], 8, bezpieczny_tekst(row['data_zakupu']), 1)
-                    pdf.cell(cols[1], 8, bezpieczny_tekst(str(row['sklep'])[:35]), 1)
-                    pdf.cell(cols[2], 8, bezpieczny_tekst(f"{row['kwota']:.2f} zl"), 1, 0, 'R')
-                    pdf.cell(cols[3], 8, bezpieczny_tekst(str(row['status'])[:22]), 1)
-                    pdf.cell(cols[4], 8, bezpieczny_tekst(str(row['metoda_platnosci'])[:20]), 1)
-                    pdf.cell(cols[5], 8, bezpieczny_tekst(str(row['zgloszone_przez'])), 1)
+                    # Kolor tła dla co drugiego wiersza
+                    if fill: pdf.set_fill_color(245, 245, 245)
+                    else: pdf.set_fill_color(255, 255, 255)
+                    
+                    pdf.cell(cols[0], 9, pdf.clean_text(row['data_zakupu']), border='B', fill=True)
+                    pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:40]), border='B', fill=True)
+                    pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zł"), border='B', align='R', fill=True)
+                    pdf.cell(cols[3], 9, pdf.clean_text(str(row['status'])[:20]), border='B', fill=True)
+                    pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])), border='B', fill=True)
+                    pdf.cell(cols[5], 9, pdf.clean_text(str(row['zgloszone_przez'])), border='B', fill=True)
                     pdf.ln()
-                
+                    fill = not fill # Przełącz kolor
+
                 pdf_output = pdf.output()
-                c_ex2.download_button("📄 Pobierz PRAWDZIWY PDF", data=bytes(pdf_output), file_name=f"raport_{date.today()}.pdf", mime="application/pdf", use_container_width=True)
+                c_ex2.download_button(
+                    label="📄 Pobierz Elegancki PDF",
+                    data=bytes(pdf_output),
+                    file_name=f"raport_wydatkow_{date.today()}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
             except Exception as e:
                 c_ex2.error(f"Błąd PDF: {e}")
 
