@@ -100,7 +100,6 @@ else:
                         with st.spinner("Wgrywanie dokumentu..."):
                             d_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
                             ext = plik_u.name.split('.')[-1].lower() if plik_u else "jpg"
-                            # Dodano uuid dla uniknięcia nadpisywania plików o tej samej sekundzie
                             d_nazwa = f"faktura_{int(time.time())}_{uuid.uuid4().hex[:8]}.{ext}"
                             supabase.storage.from_("faktury_zdjecia").upload(d_nazwa, d_bytes)
                             url_zdj = supabase.storage.from_("faktury_zdjecia").get_public_url(d_nazwa)
@@ -259,13 +258,13 @@ else:
             except:
                 c_ex1.error("Błąd wtyczki Excel. Sprawdź requirements.txt na GitHubie.")
 
-            # --- ELEGANCKI PDF ---
+            # --- ELEGANCKI PDF (PIONOWY / PORTRAIT) ---
             try:
                 class ElegantPDF(FPDF):
                     def header(self):
-                        # Pasek dekoracyjny na górze
+                        # Pasek dekoracyjny na górze - dostosowany do szerokości A4 pionowo (210mm)
                         self.set_fill_color(211, 47, 47)  # Kolor czerwony
-                        self.rect(0, 0, 297, 20, 'F') 
+                        self.rect(0, 0, 210, 20, 'F') 
                         
                         if hasattr(self, 'font_ready') and self.font_ready:
                             self.set_font('Roboto', '', 16)
@@ -273,7 +272,7 @@ else:
                             self.set_font('helvetica', 'B', 16)
                             
                         self.set_text_color(255, 255, 255)
-                        tytul = f"Raport Wydatków Emila - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
+                        tytul = f"Raport Wydatków - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
                         self.cell(0, 10, self.clean_text(tytul), ln=True, align='C')
                         self.ln(10)
 
@@ -302,7 +301,8 @@ else:
                     try: urllib.request.urlretrieve(font_url, font_path)
                     except: pass
 
-                pdf = ElegantPDF(orientation='L', unit='mm', format='A4')
+                # Zmiana orientacji z 'L' na 'P' (Portrait)
+                pdf = ElegantPDF(orientation='P', unit='mm', format='A4')
                 pdf.alias_nb_pages()
                 
                 # Konfiguracja czcionki polskiej
@@ -314,8 +314,8 @@ else:
 
                 pdf.add_page()
                 
-                # Nagłówki tabeli
-                cols = [30, 65, 25, 45, 40, 45]
+                # Węższe kolumny dostosowane do szerokości 190mm kartki pionowej (210mm - 20mm marginesów)
+                cols = [22, 55, 22, 30, 30, 31]
                 headers = ["Data", "Sklep / Dostawca", "Kwota", "Status", "Metoda", "Użytkownik"]
                 
                 pdf.set_fill_color(60, 60, 60) # Ciemnoszary nagłówek tabeli
@@ -338,20 +338,21 @@ else:
                     if fill: pdf.set_fill_color(245, 245, 245)
                     else: pdf.set_fill_color(255, 255, 255)
                     
-                    pdf.cell(cols[0], 9, pdf.clean_text(row['data_zakupu']), border='B', fill=True)
-                    pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:40]), border='B', fill=True)
+                    # Delikatnie przycięte teksty dla węższych kolumn pionowych
+                    pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
+                    pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:30]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zł"), border='B', align='R', fill=True)
-                    pdf.cell(cols[3], 9, pdf.clean_text(str(row['status'])[:20]), border='B', fill=True)
-                    pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])), border='B', fill=True)
-                    pdf.cell(cols[5], 9, pdf.clean_text(str(row['zgloszone_przez'])), border='B', fill=True)
+                    pdf.cell(cols[3], 9, pdf.clean_text(str(row['status'])[:16]), border='B', fill=True)
+                    pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])[:16]), border='B', fill=True)
+                    pdf.cell(cols[5], 9, pdf.clean_text(str(row['zgloszone_przez'])[:15]), border='B', fill=True)
                     pdf.ln()
                     fill = not fill # Przełącz kolor
 
                 pdf_output = pdf.output()
                 c_ex2.download_button(
-                    label="📄 Pobierz Elegancki PDF",
+                    label="📄 Pobierz Elegancki PDF (Pionowy)",
                     data=bytes(pdf_output),
-                    file_name=f"raport_wydatkow_{date.today()}.pdf",
+                    file_name=f"raport_wydatkow_pion_{date.today()}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
