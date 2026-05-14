@@ -163,6 +163,45 @@ def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
         return st.text_input(label, value=value, key=key, placeholder=placeholder)
 
 
+def wgraj_dokument_do_supabase(plik_u=None, foto=None):
+    """
+    Wgrywa plik lub zdjecie do Supabase Storage.
+    Zabezpieczenia:
+    - limit rozmiaru pliku,
+    - kontrola rozszerzenia,
+    - unikalna nazwa pliku,
+    - czytelny blad zamiast wysypania aplikacji.
+    """
+    MAX_MB = 10
+    DOZWOLONE_EXT = ["png", "jpg", "jpeg", "pdf"]
+
+    if not plik_u and not foto:
+        return ""
+
+    if plik_u:
+        d_bytes = plik_u.getvalue()
+        oryginalna_nazwa = plik_u.name or "plik"
+        ext = oryginalna_nazwa.split(".")[-1].lower() if "." in oryginalna_nazwa else ""
+    else:
+        d_bytes = foto.getvalue()
+        ext = "jpg"
+
+    rozmiar_mb = len(d_bytes) / (1024 * 1024)
+    if rozmiar_mb > MAX_MB:
+        raise ValueError(f"Plik jest za duzy. Maksymalny rozmiar to {MAX_MB} MB.")
+
+    if ext not in DOZWOLONE_EXT:
+        raise ValueError("Nieobslugiwany typ pliku. Dozwolone sa: PNG, JPG, JPEG, PDF.")
+
+    d_nazwa = f"faktura_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.{ext}"
+
+    try:
+        supabase.storage.from_("faktury_zdjecia").upload(d_nazwa, d_bytes)
+        return supabase.storage.from_("faktury_zdjecia").get_public_url(d_nazwa)
+    except Exception as e:
+        raise RuntimeError(f"Nie udalo sie wgrac dokumentu do Supabase: {e}")
+
+
 def zapisz_sesje(login, rola):
     """
     Zapisuje podstawowe dane w session_state i query params.
@@ -313,20 +352,16 @@ else:
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
                 if sklep and sklep != "--- wpisz nowa wartosc ---":
-                    url_zdj = ""
-                    if plik_u or foto:
-                        with st.spinner("Wgrywanie dokumentu..."):
-                            d_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
-                            ext = plik_u.name.split('.')[-1].lower() if plik_u else "jpg"
-                            d_nazwa = f"faktura_{int(time.time())}_{uuid.uuid4().hex[:8]}.{ext}"
-                            supabase.storage.from_("faktury_zdjecia").upload(d_nazwa, d_bytes)
-                            url_zdj = supabase.storage.from_("faktury_zdjecia").get_public_url(d_nazwa)
-
-                    kwota_db = 0.0 if brak_kwoty else kwota
-                    data_zak_str = "?" if brak_daty else str(data_zak)
-                    miesiac_rok = datetime.now().strftime("%Y-%m") if brak_daty else str(data_zak)[:7]
-
                     try:
+                        url_zdj = ""
+                        if plik_u or foto:
+                            with st.spinner("Wgrywanie dokumentu..."):
+                                url_zdj = wgraj_dokument_do_supabase(plik_u=plik_u, foto=foto)
+
+                        kwota_db = 0.0 if brak_kwoty else kwota
+                        data_zak_str = "?" if brak_daty else str(data_zak)
+                        miesiac_rok = datetime.now().strftime("%Y-%m") if brak_daty else str(data_zak)[:7]
+
                         supabase.table("wydatki").insert({
                             "sklep": sklep,
                             "kwota": kwota_db,
