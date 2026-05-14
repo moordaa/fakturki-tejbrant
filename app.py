@@ -136,22 +136,31 @@ def pobierz_podpowiedzi():
 
 def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
     """
-    Pole z podpowiedziami.
-    W Streamlit najstabilniej dziala przez selectbox z mozliwoscia wpisywania po pierwszych literach.
-    Uzytkownik moze wybrac z listy albo wybrac '--- wpisz nowa wartosc ---'.
+    Jedno pole z podpowiedziami.
+    Dziala tak:
+    - mozna wybrac wartosc z listy,
+    - mozna zaczac pisac pierwsze litery, zeby filtrowac liste,
+    - mozna wpisac calkiem nowa wartosc bez drugiego pola.
     """
-    opcje = [x for x in opcje if x]
-    specjalna = "--- wpisz nowa wartosc ---"
+    opcje = sorted(list(set([str(x).strip() for x in opcje if str(x).strip()])), key=lambda x: x.lower())
 
-    lista = [specjalna] + opcje
-    index = 0
-    if value and value in opcje:
-        index = lista.index(value)
+    if value and str(value).strip() and value not in opcje:
+        opcje.insert(0, value)
 
-    wybor = st.selectbox(label, lista, index=index, key=f"select_{key}")
-    if wybor == specjalna:
-        return st.text_input(f"{label} - nowa wartosc", value=value if value not in opcje else "", key=f"text_{key}", placeholder=placeholder)
-    return wybor
+    # Streamlit w nowszych wersjach obsluguje accept_new_options=True.
+    # Dzieki temu jedno pole dziala jak lista + wpisywanie nowej wartosci.
+    try:
+        return st.selectbox(
+            label,
+            options=opcje,
+            index=opcje.index(value) if value in opcje else None,
+            key=key,
+            placeholder=placeholder or "Wybierz albo wpisz nowa wartosc",
+            accept_new_options=True
+        )
+    except TypeError:
+        # Awaryjnie, gdy Streamlit na serwerze jest starszy i nie zna accept_new_options.
+        return st.text_input(label, value=value, key=key, placeholder=placeholder)
 
 
 def zapisz_sesje(login, rola):
