@@ -515,11 +515,17 @@ else:
                 f_mies = c3.selectbox("📅 Miesiac", miesiace)
 
                 c4, c5, c6 = st.columns(3)
-                pracownicy = sorted(df['zgloszone_przez'].unique().tolist())
+                pracownicy = sorted(df['zgloszone_przez'].dropna().unique().tolist())
                 f_prac = c4.multiselect("👤 Uzytkownik", pracownicy, default=pracownicy)
-                metody = sorted(df['metoda_platnosci'].unique().tolist())
+                metody = sorted(df['metoda_platnosci'].dropna().unique().tolist())
                 f_met = c5.multiselect("💳 Rodzaj platnosci", metody, default=metody)
                 f_rozl = c6.selectbox("🤝 Rozliczone z Marzeną?", ["Wszystkie", "TAK (✅)", "NIE"])
+
+                c7, c8, c9 = st.columns(3)
+                statusy_platnosci = sorted(df['status'].dropna().unique().tolist())
+                f_status = c7.multiselect("📌 Status platnosci", statusy_platnosci, default=statusy_platnosci)
+                f_sklep = c8.text_input("🏪 Szukaj sklep / dostawca")
+                f_uwagi = c9.text_input("📝 Szukaj projekt / uwagi")
 
             df_f = df.copy()
             if len(f_zakres) == 2:
@@ -534,6 +540,14 @@ else:
                 df_f = df_f[df_f['data_zakupu'].str.contains(f"-{f_mies}-", na=False)]
             df_f = df_f[df_f['zgloszone_przez'].isin(f_prac)]
             df_f = df_f[df_f['metoda_platnosci'].isin(f_met)]
+            df_f = df_f[df_f['status'].isin(f_status)]
+
+            if f_sklep.strip():
+                df_f = df_f[df_f['sklep'].fillna('').str.lower().str.contains(f_sklep.strip().lower(), na=False)]
+
+            if f_uwagi.strip():
+                df_f = df_f[df_f['uwagi'].fillna('').str.lower().str.contains(f_uwagi.strip().lower(), na=False)]
+
             if f_rozl == "TAK (✅)":
                 df_f = df_f[df_f['status'].str.contains("✅", na=False)]
             elif f_rozl == "NIE":
