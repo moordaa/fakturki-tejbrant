@@ -19,6 +19,8 @@ from fpdf import FPDF
 # - hasla nowych kont zapisywane jako hash SHA-256
 # - stare hasla tekstowe nadal dzialaja i po zalogowaniu sa automatycznie zamieniane na hash
 # - admin nie widzi juz hasel uzytkownikow
+# - raport PDF pokazuje okres wydruku
+# - wpisy w raporcie sa sortowane wedlug daty
 # ============================================================
 
 # --- KONFIGURACJA ---
@@ -553,6 +555,13 @@ else:
             elif f_rozl == "NIE":
                 df_f = df_f[~df_f['status'].str.contains("✅", na=False)]
 
+            # Sortowanie wpisow raportu wedlug daty zakupu.
+            # Niepoprawne albo nieznane daty (np. "?") trafiaja na koniec.
+            df_f = df_f.copy()
+            df_f['_sort_data_zakupu'] = pd.to_datetime(df_f['data_zakupu'], errors='coerce')
+            df_f = df_f.sort_values(by='_sort_data_zakupu', ascending=True, na_position='last')
+            df_f = df_f.drop(columns=['_sort_data_zakupu'])
+
             st.divider()
             m1, m2 = st.columns(2)
             m1.metric("Suma wybranych", f"{df_f['kwota'].sum():.2f} zl")
@@ -610,17 +619,25 @@ else:
                 class ElegantPDF(FPDF):
                     def header(self):
                         self.set_fill_color(211, 47, 47)
-                        self.rect(0, 0, 210, 20, 'F')
+                        self.rect(0, 0, 210, 28, 'F')
 
                         if hasattr(self, 'font_ready') and self.font_ready:
-                            self.set_font('Roboto', '', 16)
+                            self.set_font('Roboto', '', 15)
                         else:
-                            self.set_font('helvetica', 'B', 16)
+                            self.set_font('helvetica', 'B', 15)
 
                         self.set_text_color(255, 255, 255)
                         tytul = f"Raport Wydatkow - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
-                        self.cell(0, 10, self.clean_text(tytul), ln=True, align='C')
-                        self.ln(10)
+                        self.cell(0, 9, self.clean_text(tytul), ln=True, align='C')
+
+                        if hasattr(self, 'font_ready') and self.font_ready:
+                            self.set_font('Roboto', '', 10)
+                        else:
+                            self.set_font('helvetica', '', 10)
+
+                        okres = getattr(self, 'okres_raportu', '')
+                        self.cell(0, 7, self.clean_text(f"Okres raportu: {okres}"), ln=True, align='C')
+                        self.ln(12)
 
                     def footer(self):
                         self.set_y(-15)
@@ -650,6 +667,11 @@ else:
 
                 pdf = ElegantPDF(orientation='P', unit='mm', format='A4')
                 pdf.alias_nb_pages()
+
+                if len(f_zakres) == 2:
+                    pdf.okres_raportu = f"{f_zakres[0].strftime('%d.%m.%Y')} - {f_zakres[1].strftime('%d.%m.%Y')}"
+                else:
+                    pdf.okres_raportu = "nie wybrano pelnego zakresu dat"
 
                 if os.path.exists(font_path):
                     pdf.add_font('Roboto', '', font_path, uni=True)
