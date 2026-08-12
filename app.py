@@ -682,7 +682,7 @@ else:
                 pdf.add_page()
 
                 cols = [22, 55, 22, 30, 30, 31]
-                headers = ["Data", "Sklep / Dostawca", "Kwota", "Status", "Metoda", "Uzytkownik"]
+                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda", "Uzytkownik"]
 
                 pdf.set_fill_color(60, 60, 60)
                 pdf.set_text_color(255, 255, 255)
@@ -711,7 +711,7 @@ else:
                     pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:30]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
-                    pdf.cell(cols[3], 9, pdf.clean_text(str(row['status'])[:16]), border='B', fill=True)
+                    pdf.cell(cols[3], 9, pdf.clean_text(str(row.get('rodzaj_dokumentu', ''))[:16]), border='B', fill=True)
                     pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])[:16]), border='B', fill=True)
                     pdf.cell(cols[5], 9, pdf.clean_text(str(row['zgloszone_przez'])[:15]), border='B', fill=True)
                     pdf.ln()
