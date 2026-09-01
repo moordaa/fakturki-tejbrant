@@ -332,7 +332,7 @@ else:
                     platnicy_podpowiedzi,
                     key="dodaj_platnik",
                     value=st.session_state.uzytkownik,
-                    placeholder="Imie lub login osoby placacej"
+      0             placeholder="Imie lub login osoby placacej"
                 )
             typ_sklepu = c6.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
 
@@ -345,7 +345,7 @@ else:
             uwagi = st.text_area("📝 Dodatkowe uwagi")
 
             st.divider()
-            opcja_dok = st.radio("Dodaj dokument:", ["Brak", "📁 Wgraj plik", "📷 Zdjecie"], horizontal=True)
+      0     opcja_dok = st.radio("Dodaj dokument:", ["Brak", "📁 Wgraj plik", "📷 Zdjecie"], horizontal=True)
             plik_u, foto = None, None
             if opcja_dok == "📁 Wgraj plik":
                 plik_u = st.file_uploader("Wybierz plik", type=["png", "jpg", "jpeg", "pdf"])
@@ -659,7 +659,7 @@ else:
 
                 font_path = "Roboto-Regular.ttf"
                 font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
-                if not os.path.exists(font_path):
+    0           if not os.path.exists(font_path):
                     try:
                         urllib.request.urlretrieve(font_url, font_path)
                     except Exception:
@@ -681,8 +681,8 @@ else:
 
                 pdf.add_page()
 
-                cols = [22, 55, 22, 30, 30, 31]
-                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda", "Uzytkownik"]
+                cols = [25, 70, 25, 35, 35]
+                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda"]
 
                 pdf.set_fill_color(60, 60, 60)
                 pdf.set_text_color(255, 255, 255)
@@ -709,11 +709,10 @@ else:
                         pdf.set_fill_color(255, 255, 255)
 
                     pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
-                    pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:30]), border='B', fill=True)
+                    pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
-                    pdf.cell(cols[3], 9, pdf.clean_text(str(row.get('rodzaj_dokumentu', ''))[:16]), border='B', fill=True)
-                    pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])[:16]), border='B', fill=True)
-                    pdf.cell(cols[5], 9, pdf.clean_text(str(row['zgloszone_przez'])[:15]), border='B', fill=True)
+                    pdf.cell(cols[3], 9, pdf.clean_text(str(row.get('rodzaj_dokumentu', ''))[:18]), border='B', fill=True)
+                    pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])[:18]), border='B', fill=True)
                     pdf.ln()
                     fill = not fill
 
