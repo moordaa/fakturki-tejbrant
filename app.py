@@ -683,7 +683,13 @@ else:
                     pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
-                    pdf.cell(cols[3], 9, pdf.clean_text(str(row.get('rodzaj_dokumentu', ''))[:18]), border='B', fill=True)
+
+                    # Podmiana 'Papierowy / Paragon' na 'Papierowy'
+                    rodzaj_doc = str(row.get('rodzaj_dokumentu', '')).strip()
+                    if "papierowy" in rodzaj_doc.lower():
+                        rodzaj_doc = "Papierowy"
+
+                    pdf.cell(cols[3], 9, pdf.clean_text(rodzaj_doc[:18]), border='B', fill=True)
 
                     metoda_tekst = str(row['metoda_platnosci']).strip()
                     metoda_lower = metoda_tekst.lower()
