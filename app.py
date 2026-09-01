@@ -638,10 +638,18 @@ else:
                 pdf = ElegantPDF(orientation='P', unit='mm', format='A4')
                 pdf.alias_nb_pages()
 
-                if len(f_zakres) == 2:
+                # Dynamiczne ustalanie opisu okresu na podstawie filtrow
+                if f_rok != "Wszystkie" or f_mies != "Wszystkie":
+                    filtry_d = []
+                    if f_mies != "Wszystkie":
+                        filtry_d.append(f"Miesiąc: {f_mies}")
+                    if f_rok != "Wszystkie":
+                        filtry_d.append(f"Rok: {f_rok}")
+                    pdf.okres_raportu = " | ".join(filtry_d)
+                elif len(f_zakres) == 2:
                     pdf.okres_raportu = f"{f_zakres[0].strftime('%d.%m.%Y')} - {f_zakres[1].strftime('%d.%m.%Y')}"
                 else:
-                    pdf.okres_raportu = "nie wybrano pelnego zakresu dat"
+                    pdf.okres_raportu = "Wszystkie wydatki"
 
                 if os.path.exists(font_path):
                     pdf.add_font('Roboto', '', font_path, uni=True)
@@ -684,7 +692,6 @@ else:
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
 
-                    # Podmiana 'Papierowy / Paragon' na 'Papierowy'
                     rodzaj_doc = str(row.get('rodzaj_dokumentu', '')).strip()
                     if "papierowy" in rodzaj_doc.lower():
                         rodzaj_doc = "Papierowy"
@@ -695,7 +702,6 @@ else:
                     metoda_lower = metoda_tekst.lower()
                     zrodlo_lower = str(row.get('zrodlo_srodkow', '')).lower()
 
-                    # Delikatny ciepły odcień żółtego dla karty prywatnej oraz gotówki
                     if any(k in metoda_lower or k in zrodlo_lower for k in ['karta prywatna', 'gotowka', 'gotówka']):
                         pdf.set_fill_color(255, 243, 205)
                     else:
