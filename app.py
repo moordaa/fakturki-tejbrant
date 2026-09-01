@@ -638,14 +638,12 @@ else:
                 pdf = ElegantPDF(orientation='P', unit='mm', format='A4')
                 pdf.alias_nb_pages()
 
-                # Dynamiczne ustalanie opisu okresu na podstawie filtrow
-                if f_rok != "Wszystkie" or f_mies != "Wszystkie":
-                    filtry_d = []
-                    if f_mies != "Wszystkie":
-                        filtry_d.append(f"Miesiąc: {f_mies}")
-                    if f_rok != "Wszystkie":
-                        filtry_d.append(f"Rok: {f_rok}")
-                    pdf.okres_raportu = " | ".join(filtry_d)
+                # Dynamiczne ustalanie opisu okresu z uwzględnieniem miesiąca i roku
+                rok_str = f_rok if f_rok != "Wszystkie" else str(datetime.now().year)
+                if f_mies != "Wszystkie":
+                    pdf.okres_raportu = f"Miesiąc: {f_mies} | Rok: {rok_str}"
+                elif f_rok != "Wszystkie":
+                    pdf.okres_raportu = f"Rok: {f_rok}"
                 elif len(f_zakres) == 2:
                     pdf.okres_raportu = f"{f_zakres[0].strftime('%d.%m.%Y')} - {f_zakres[1].strftime('%d.%m.%Y')}"
                 else:
