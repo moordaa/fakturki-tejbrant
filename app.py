@@ -280,33 +280,12 @@ else:
 
             brak_daty = col2.checkbox("Brak daty (?)")
             data_zak = col2.date_input("📅 Data zakupu", date.today(), disabled=brak_daty)
-            rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "Faktura PDF", "?"])
+            rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["KSeF", "Papierowy", "?"])
 
             st.divider()
-            c1, c2, c3 = st.columns(3)
+            c1, c2 = st.columns(2)
             metoda = c1.selectbox("💳 Metoda platnosci", ["Karta firmowa", "Karta prywatna", "Gotowka", "Pro forma", "Przelew"])
-            status = c2.selectbox("📌 Status platnosci", ["Zaplacone", "Do oplacenia", "Przelew", "Zwrot"])
-            zrodlo = c3.selectbox("🏧 Zrodlo srodkow", ["Karta firmowa", "Karta prywatna", "Gotowka", "Konto firmowe"])
-
-            st.divider()
-            c4, c5, c6 = st.columns(3)
-            with c4:
-                odbiorca = pole_z_podpowiedziami(
-                    "👤 Kto odebral?",
-                    odbiorcy_podpowiedzi,
-                    key="dodaj_odbiorca",
-                    value=st.session_state.uzytkownik,
-                    placeholder="Imie lub login osoby odbierajacej"
-                )
-            with c5:
-                platnik = pole_z_podpowiedziami(
-                    "👤 Kto zaplacil?",
-                    platnicy_podpowiedzi,
-                    key="dodaj_platnik",
-                    value=st.session_state.uzytkownik,
-                    placeholder="Imie lub login osoby placacej"
-                )
-            typ_sklepu = c6.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
+            typ_sklepu = c2.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
 
             projekt = pole_z_podpowiedziami(
                 "🏗️ Projekt / Cel",
@@ -342,10 +321,10 @@ else:
                             "data_zakupu": data_zak_str,
                             "rodzaj_dokumentu": rodzaj_doc,
                             "metoda_platnosci": metoda,
-                            "status": status,
-                            "zrodlo_srodkow": zrodlo,
-                            "odbiorca": odbiorca,
-                            "platnik": platnik,
+                            "status": "Zaplacone",
+                            "zrodlo_srodkow": metoda,
+                            "odbiorca": st.session_state.uzytkownik,
+                            "platnik": st.session_state.uzytkownik,
                             "typ_sklepu": typ_sklepu,
                             "uwagi": f"PROJEKT: {projekt} | {uwagi}",
                             "zdjecie_url": url_zdj,
@@ -423,7 +402,7 @@ else:
                     e_k = e2.text_input("Kwota (wpisz ?)", value="?" if float(r['kwota']) == 0.0 else str(r['kwota']), key=f"ek_{r['id']}")
                     e_d = e3.text_input("Data (lub ?)", value=r['data_zakupu'], key=f"ed_{r['id']}")
 
-                    o_rd = ["Papierowy / Paragon", "KSeF", "E-mail (PDF)", "Faktura PDF", "?"]
+                    o_rd = ["KSeF", "Papierowy", "E-mail (PDF)", "Faktura PDF", "?"]
                     e_rd = st.selectbox("Rodzaj dokumentu", o_rd, index=g_idx(o_rd, r.get('rodzaj_dokumentu', '?')), key=f"erd_{r['id']}")
 
                     c_e1, c_e2, c_e3 = st.columns(3)
@@ -638,7 +617,6 @@ else:
                 pdf = ElegantPDF(orientation='P', unit='mm', format='A4')
                 pdf.alias_nb_pages()
 
-                # Dynamiczne ustalanie opisu okresu z uwzględnieniem miesiąca i roku
                 rok_str = f_rok if f_rok != "Wszystkie" else str(datetime.now().year)
                 if f_mies != "Wszystkie":
                     pdf.okres_raportu = f"Miesiąc: {f_mies} | Rok: {rok_str}"
