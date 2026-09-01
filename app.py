@@ -12,15 +12,6 @@ from fpdf import FPDF
 
 # ============================================================
 # FAKTURKI-TEJBRANT
-# Poprawka 2:
-# - podpowiedzi z bazy dla sklepu, odbiorcy, platnika i projektu
-# - status platnosci: dodano "Zwrot"
-# - ograniczono przypadkowe wylogowania przez zapis danych sesji
-# - hasla nowych kont zapisywane jako hash SHA-256
-# - stare hasla tekstowe nadal dzialaja i po zalogowaniu sa automatycznie zamieniane na hash
-# - admin nie widzi juz hasel uzytkownikow
-# - raport PDF pokazuje okres wydruku
-# - wpisy w raporcie sa sortowane wedlug daty
 # ============================================================
 
 # --- KONFIGURACJA ---
@@ -139,18 +130,12 @@ def pobierz_podpowiedzi():
 def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
     """
     Jedno pole z podpowiedziami.
-    Dziala tak:
-    - mozna wybrac wartosc z listy,
-    - mozna zaczac pisac pierwsze litery, zeby filtrowac liste,
-    - mozna wpisac calkiem nowa wartosc bez drugiego pola.
     """
     opcje = sorted(list(set([str(x).strip() for x in opcje if str(x).strip()])), key=lambda x: x.lower())
 
     if value and str(value).strip() and value not in opcje:
         opcje.insert(0, value)
 
-    # Streamlit w nowszych wersjach obsluguje accept_new_options=True.
-    # Dzieki temu jedno pole dziala jak lista + wpisywanie nowej wartosci.
     try:
         return st.selectbox(
             label,
@@ -161,18 +146,12 @@ def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
             accept_new_options=True
         )
     except TypeError:
-        # Awaryjnie, gdy Streamlit na serwerze jest starszy i nie zna accept_new_options.
         return st.text_input(label, value=value, key=key, placeholder=placeholder)
 
 
 def wgraj_dokument_do_supabase(plik_u=None, foto=None):
     """
     Wgrywa plik lub zdjecie do Supabase Storage.
-    Zabezpieczenia:
-    - limit rozmiaru pliku,
-    - kontrola rozszerzenia,
-    - unikalna nazwa pliku,
-    - czytelny blad zamiast wysypania aplikacji.
     """
     MAX_MB = 10
     DOZWOLONE_EXT = ["png", "jpg", "jpeg", "pdf"]
@@ -205,11 +184,6 @@ def wgraj_dokument_do_supabase(plik_u=None, foto=None):
 
 
 def zapisz_sesje(login, rola):
-    """
-    Zapisuje podstawowe dane w session_state i query params.
-    To pomaga ograniczyc wylogowanie przy zwyklym odswiezeniu strony.
-    Uwaga: to nie jest pelne logowanie bankowe, ale dla prostej aplikacji firmowej poprawia wygode.
-    """
     st.session_state.zalogowany = True
     st.session_state.uzytkownik = login
     st.session_state.rola = rola or "uzytkownik"
@@ -238,7 +212,6 @@ if 'zalogowany' not in st.session_state:
     st.session_state.uzytkownik = ""
     st.session_state.rola = "uzytkownik"
 
-# Proba przywrocenia sesji po odswiezeniu strony
 try:
     if not st.session_state.zalogowany:
         qp_login = st.query_params.get("login", "")
@@ -285,7 +258,6 @@ else:
             wyczysc_sesje()
             st.rerun()
 
-    # Pobranie podpowiedzi z bazy
     sklepy_podpowiedzi, odbiorcy_podpowiedzi, platnicy_podpowiedzi, projekty_podpowiedzi = pobierz_podpowiedzi()
 
     # =========================================================================
@@ -555,8 +527,6 @@ else:
             elif f_rozl == "NIE":
                 df_f = df_f[~df_f['status'].str.contains("✅", na=False)]
 
-            # Sortowanie wpisow raportu wedlug daty zakupu.
-            # Niepoprawne albo nieznane daty (np. "?") trafiaja na koniec.
             df_f = df_f.copy()
             df_f['_sort_data_zakupu'] = pd.to_datetime(df_f['data_zakupu'], errors='coerce')
             df_f = df_f.sort_values(by='_sort_data_zakupu', ascending=True, na_position='last')
@@ -682,7 +652,7 @@ else:
                 pdf.add_page()
 
                 cols = [25, 70, 25, 35, 35]
-                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda"]
+                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda\npłatności"]
 
                 pdf.set_fill_color(60, 60, 60)
                 pdf.set_text_color(255, 255, 255)
@@ -691,9 +661,13 @@ else:
                 else:
                     pdf.set_font('helvetica', 'B', 10)
 
+                y_hdr = pdf.get_y()
                 for i, h in enumerate(headers):
-                    pdf.cell(cols[i], 10, pdf.clean_text(h), border=0, ln=0, align='C', fill=True)
-                pdf.ln()
+                    if i == 4:
+                        pdf.multi_cell(cols[i], 5, pdf.clean_text(h), border=0, align='C', fill=True)
+                        pdf.set_xy(10, y_hdr + 10)
+                    else:
+                        pdf.cell(cols[i], 10, pdf.clean_text(h), border=0, ln=0, align='C', fill=True)
 
                 pdf.set_text_color(0, 0, 0)
                 if pdf.font_ready:
@@ -703,17 +677,34 @@ else:
 
                 fill = False
                 for index, row in df_f.iterrows():
-                    if fill:
-                        pdf.set_fill_color(245, 245, 245)
-                    else:
-                        pdf.set_fill_color(255, 255, 255)
+                    bg_r, bg_g, bg_b = (245, 245, 245) if fill else (255, 255, 255)
 
+                    pdf.set_fill_color(bg_r, bg_g, bg_b)
                     pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
                     pdf.cell(cols[3], 9, pdf.clean_text(str(row.get('rodzaj_dokumentu', ''))[:18]), border='B', fill=True)
-                    pdf.cell(cols[4], 9, pdf.clean_text(str(row['metoda_platnosci'])[:18]), border='B', fill=True)
-                    pdf.ln()
+
+                    metoda_tekst = str(row['metoda_platnosci']).strip()
+                    metoda_lower = metoda_tekst.lower()
+                    zrodlo_lower = str(row.get('zrodlo_srodkow', '')).lower()
+
+                    # Delikatny ciepły odcień żółtego dla karty prywatnej oraz gotówki
+                    if any(k in metoda_lower or k in zrodlo_lower for k in ['karta prywatna', 'gotowka', 'gotówka']):
+                        pdf.set_fill_color(255, 243, 205)
+                    else:
+                        pdf.set_fill_color(bg_r, bg_g, bg_b)
+
+                    metoda_clean = pdf.clean_text(metoda_tekst)
+                    if len(metoda_clean) > 13 and ' ' in metoda_clean:
+                        y_row = pdf.get_y()
+                        metoda_wrapped = metoda_clean.replace(' ', '\n', 1)
+                        pdf.multi_cell(cols[4], 4.5, metoda_wrapped, border='B', align='L', fill=True)
+                        pdf.set_xy(10, y_row + 9)
+                    else:
+                        pdf.cell(cols[4], 9, metoda_clean[:25], border='B', fill=True)
+                        pdf.ln()
+
                     fill = not fill
 
                 pdf_output = pdf.output()
