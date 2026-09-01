@@ -332,7 +332,7 @@ else:
                     platnicy_podpowiedzi,
                     key="dodaj_platnik",
                     value=st.session_state.uzytkownik,
-      0             placeholder="Imie lub login osoby placacej"
+                    placeholder="Imie lub login osoby placacej"
                 )
             typ_sklepu = c6.selectbox("📍 Miejsce zakupu", ["Stacjonarny", "Internetowy"])
 
@@ -345,7 +345,7 @@ else:
             uwagi = st.text_area("📝 Dodatkowe uwagi")
 
             st.divider()
-      0     opcja_dok = st.radio("Dodaj dokument:", ["Brak", "📁 Wgraj plik", "📷 Zdjecie"], horizontal=True)
+            opcja_dok = st.radio("Dodaj dokument:", ["Brak", "📁 Wgraj plik", "📷 Zdjecie"], horizontal=True)
             plik_u, foto = None, None
             if opcja_dok == "📁 Wgraj plik":
                 plik_u = st.file_uploader("Wybierz plik", type=["png", "jpg", "jpeg", "pdf"])
@@ -659,7 +659,7 @@ else:
 
                 font_path = "Roboto-Regular.ttf"
                 font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
-    0           if not os.path.exists(font_path):
+                if not os.path.exists(font_path):
                     try:
                         urllib.request.urlretrieve(font_url, font_path)
                     except Exception:
