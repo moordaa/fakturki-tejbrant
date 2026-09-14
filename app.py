@@ -136,6 +136,9 @@ def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
     if value and str(value).strip() and value not in opcje:
         opcje.insert(0, value)
 
+    if not opcje:
+        opcje = ["Brak podpowiedzi"]
+
     try:
         return st.selectbox(
             label,
@@ -145,7 +148,7 @@ def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
             placeholder=placeholder or "Wybierz albo wpisz nowa wartosc",
             accept_new_options=True
         )
-    except TypeError:
+    except Exception:
         return st.text_input(label, value=value, key=key, placeholder=placeholder)
 
 
@@ -304,7 +307,7 @@ else:
                 foto = st.camera_input("Zrob zdjecie")
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
-                if sklep and sklep != "--- wpisz nowa wartosc ---":
+                if sklep and sklep != "Brak podpowiedzi":
                     try:
                         url_zdj = ""
                         if plik_u or foto:
@@ -628,7 +631,7 @@ else:
                     pdf.okres_raportu = "Wszystkie wydatki"
 
                 if os.path.exists(font_path):
-                    pdf.add_font('Roboto', '', font_path, uni=True)
+                    pdf.add_font('Roboto', '', font_path)
                     pdf.font_ready = True
                 else:
                     pdf.font_ready = False
@@ -668,18 +671,32 @@ else:
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
 
+                    # --- KOLOR DLA RODZAJU DOKUMENTU ---
                     rodzaj_doc = str(row.get('rodzaj_dokumentu', '')).strip()
-                    if "papierowy" in rodzaj_doc.lower():
-                        rodzaj_doc = "Papierowy"
+                    rodzaj_lower = rodzaj_doc.lower()
+
+                    if "ksef" in rodzaj_lower:
+                        pdf.set_fill_color(209, 231, 221)  # Delikatny zielony
+                    elif any(k in rodzaj_lower for k in ["papier", "paragon"]):
+                        pdf.set_fill_color(207, 226, 255)  # Delikatny niebieski
+                    else:
+                        pdf.set_fill_color(bg_r, bg_g, bg_b)
 
                     pdf.cell(cols[3], 9, pdf.clean_text(rodzaj_doc[:18]), border='B', fill=True)
 
+                    # --- KOLOR DLA METODY PŁATNOŚCI ---
                     metoda_tekst = str(row['metoda_platnosci']).strip()
                     metoda_lower = metoda_tekst.lower()
                     zrodlo_lower = str(row.get('zrodlo_srodkow', '')).lower()
 
-                    if any(k in metoda_lower or k in zrodlo_lower for k in ['karta prywatna', 'gotowka', 'gotówka']):
-                        pdf.set_fill_color(255, 243, 205)
+                    if "karta firmowa" in metoda_lower or "karta firmowa" in zrodlo_lower:
+                        pdf.set_fill_color(226, 227, 243)  # Delikatny fiolet
+                    elif "karta prywatna" in metoda_lower or "karta prywatna" in zrodlo_lower:
+                        pdf.set_fill_color(255, 235, 204)  # Delikatny pomarańcz/brzoskwinia
+                    elif "gotowka" in metoda_lower or "gotówka" in metoda_lower or "gotowka" in zrodlo_lower or "gotówka" in zrodlo_lower:
+                        pdf.set_fill_color(255, 249, 196)  # Delikatny żółty
+                    elif any(k in metoda_lower for k in ["przelew", "pro forma"]):
+                        pdf.set_fill_color(235, 237, 239)  # Delikatny szary
                     else:
                         pdf.set_fill_color(bg_r, bg_g, bg_b)
 
@@ -802,7 +819,7 @@ else:
 
         st.markdown("### 📂 Historia i Edycja")
         st.markdown("- **Pelna kontrola:** W zakladce *Moje Wydatki* mozesz w dowolnej chwili rozwinac opcje `✏️ Edytuj wszystko`, aby skorygowac kazda wprowadzona informacje.")
-        st.markdown("- **Rozliczenia z ksiegowoscia:** Oznaczaj zrealizowane dokumenty zielonym przyciskiem `✅ Rozlicz z Marzeną`. ")
+        st.markdown("- **Rozliczenia z ksiegowoscia:** Oznaczaj zrealizowane dokumenty zielonym przyciskiem `✅ Rozlicz z Marzeną`.")
         st.markdown("- **Zwrot:** Status `Zwrot` sluzy do oznaczania pozycji, ktore dotycza zwrotu pieniedzy/towaru.")
 
         st.markdown("### 📊 Raportowanie")
