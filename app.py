@@ -207,6 +207,27 @@ def wyczysc_sesje():
         pass
 
 
+def get_wrapped_lines(pdf, text, max_w):
+    """Dzieli tekst na linie mieszczące się w zadanej szerokości mm."""
+    text = pdf.clean_text(str(text or ''))
+    words = text.split()
+    if not words:
+        return [""]
+    lines = []
+    curr = ""
+    for word in words:
+        test = f"{curr} {word}".strip()
+        if pdf.get_string_width(test) <= max_w:
+            curr = test
+        else:
+            if curr:
+                lines.append(curr)
+            curr = word
+    if curr:
+        lines.append(curr)
+    return lines if lines else [""]
+
+
 # ============================================================
 # ZARZADZANIE SESJA
 # ============================================================
@@ -663,7 +684,7 @@ else:
             else:
                 okres_str = "Wszystkie wydatki"
 
-            # --- 3. RAPORT PDF PIONOWY (DLA KSIĘGOWOŚCI) ---
+            # --- 3. RAPORT PDF PIONOWY (Z ZAWIJANIEM TEKSTU) ---
             try:
                 class ElegantPDF(FPDF):
                     def header(self):
@@ -718,8 +739,8 @@ else:
 
                 pdf.add_page()
 
-                cols = [25, 70, 25, 35, 35]
-                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda\npłatności"]
+                cols = [23, 62, 25, 32, 48]
+                headers = ["Data", "Sklep / Dostawca", "Kwota", "Rodzaj dok.", "Metoda płatności"]
 
                 pdf.set_fill_color(60, 60, 60)
                 pdf.set_text_color(255, 255, 255)
@@ -728,13 +749,9 @@ else:
                 else:
                     pdf.set_font('helvetica', 'B', 10)
 
-                y_hdr = pdf.get_y()
                 for i, h in enumerate(headers):
-                    if i == 4:
-                        pdf.multi_cell(cols[i], 5, pdf.clean_text(h), border=0, align='C', fill=True)
-                        pdf.set_xy(10, y_hdr + 10)
-                    else:
-                        pdf.cell(cols[i], 10, pdf.clean_text(h), border=0, ln=0, align='C', fill=True)
+                    pdf.cell(cols[i], 9, pdf.clean_text(h), border=0, ln=0, align='C', fill=True)
+                pdf.ln()
 
                 pdf.set_text_color(0, 0, 0)
                 if pdf.font_ready:
@@ -744,50 +761,77 @@ else:
 
                 fill = False
                 for index, row in df_f.iterrows():
+                    row_vals = [
+                        str(row['data_zakupu'])[:10],
+                        str(row['sklep']),
+                        f"{row['kwota']:.2f} zł",
+                        str(row.get('rodzaj_dokumentu', '')),
+                        str(row['metoda_platnosci'])
+                    ]
+
+                    row_wrapped = [get_wrapped_lines(pdf, val, cols[i] - 2) for i, val in enumerate(row_vals)]
+                    max_lines = max(len(lines) for lines in row_wrapped)
+                    line_h = 4.5
+                    row_h = max(max_lines * line_h + 3, 8)
+
+                    if pdf.get_y() + row_h > pdf.page_break_trigger:
+                        pdf.add_page()
+                        pdf.set_fill_color(60, 60, 60)
+                        pdf.set_text_color(255, 255, 255)
+                        if pdf.font_ready:
+                            pdf.set_font('Roboto', '', 10)
+                        else:
+                            pdf.set_font('helvetica', 'B', 10)
+                        for i, h in enumerate(headers):
+                            pdf.cell(cols[i], 9, pdf.clean_text(h), border=0, ln=0, align='C', fill=True)
+                        pdf.ln()
+                        pdf.set_text_color(0, 0, 0)
+                        if pdf.font_ready:
+                            pdf.set_font('Roboto', '', 9)
+                        else:
+                            pdf.set_font('helvetica', '', 9)
+
+                    start_y = pdf.get_y()
+                    start_x = 10
                     bg_r, bg_g, bg_b = (245, 245, 245) if fill else (255, 255, 255)
 
-                    pdf.set_fill_color(bg_r, bg_g, bg_b)
-                    pdf.cell(cols[0], 9, pdf.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
-                    pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
-                    pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
+                    curr_x = start_x
+                    for i, lines in enumerate(row_wrapped):
+                        col_w = cols[i]
+                        cell_r, cell_g, cell_b = bg_r, bg_g, bg_b
 
-                    rodzaj_doc = str(row.get('rodzaj_dokumentu', '')).strip()
-                    rodzaj_lower = rodzaj_doc.lower()
+                        if i == 3:
+                            rodzaj_lower = str(row.get('rodzaj_dokumentu', '')).lower()
+                            if "ksef" in rodzaj_lower:
+                                cell_r, cell_g, cell_b = 209, 231, 221
+                            elif any(k in rodzaj_lower for k in ["papier", "paragon"]):
+                                cell_r, cell_g, cell_b = 207, 226, 255
+                        elif i == 4:
+                            met_lower = str(row['metoda_platnosci']).lower()
+                            zr_lower = str(row.get('zrodlo_srodkow', '')).lower()
+                            if "karta firmowa" in met_lower or "karta firmowa" in zr_lower:
+                                cell_r, cell_g, cell_b = 226, 227, 243
+                            elif "karta prywatna" in met_lower or "karta prywatna" in zr_lower:
+                                cell_r, cell_g, cell_b = 255, 235, 204
+                            elif "gotowka" in met_lower or "gotówka" in met_lower or "gotowka" in zr_lower or "gotówka" in zr_lower:
+                                cell_r, cell_g, cell_b = 255, 249, 196
+                            elif any(k in met_lower for k in ["przelew", "pro forma"]):
+                                cell_r, cell_g, cell_b = 235, 237, 239
 
-                    if "ksef" in rodzaj_lower:
-                        pdf.set_fill_color(209, 231, 221)
-                    elif any(k in rodzaj_lower for k in ["papier", "paragon"]):
-                        pdf.set_fill_color(207, 226, 255)
-                    else:
-                        pdf.set_fill_color(bg_r, bg_g, bg_b)
+                        pdf.set_fill_color(cell_r, cell_g, cell_b)
+                        pdf.rect(curr_x, start_y, col_w, row_h, 'F')
+                        pdf.line(curr_x, start_y + row_h, curr_x + col_w, start_y + row_h)
 
-                    pdf.cell(cols[3], 9, pdf.clean_text(rodzaj_doc[:18]), border='B', fill=True)
+                        text_y = start_y + 1.5
+                        align = 'R' if i == 2 else 'L'
+                        for line in lines:
+                            pdf.set_xy(curr_x + 1, text_y)
+                            pdf.cell(col_w - 2, line_h, line, border=0, align=align)
+                            text_y += line_h
 
-                    metoda_tekst = str(row['metoda_platnosci']).strip()
-                    metoda_lower = metoda_tekst.lower()
-                    zrodlo_lower = str(row.get('zrodlo_srodkow', '')).lower()
+                        curr_x += col_w
 
-                    if "karta firmowa" in metoda_lower or "karta firmowa" in zrodlo_lower:
-                        pdf.set_fill_color(226, 227, 243)
-                    elif "karta prywatna" in metoda_lower or "karta prywatna" in zrodlo_lower:
-                        pdf.set_fill_color(255, 235, 204)
-                    elif "gotowka" in metoda_lower or "gotówka" in metoda_lower or "gotowka" in zrodlo_lower or "gotówka" in zrodlo_lower:
-                        pdf.set_fill_color(255, 249, 196)
-                    elif any(k in metoda_lower for k in ["przelew", "pro forma"]):
-                        pdf.set_fill_color(235, 237, 239)
-                    else:
-                        pdf.set_fill_color(bg_r, bg_g, bg_b)
-
-                    metoda_clean = pdf.clean_text(metoda_tekst)
-                    if len(metoda_clean) > 13 and ' ' in metoda_clean:
-                        y_row = pdf.get_y()
-                        metoda_wrapped = metoda_clean.replace(' ', '\n', 1)
-                        pdf.multi_cell(cols[4], 4.5, metoda_wrapped, border='B', align='L', fill=True)
-                        pdf.set_xy(10, y_row + 9)
-                    else:
-                        pdf.cell(cols[4], 9, metoda_clean[:25], border='B', fill=True)
-                        pdf.ln()
-
+                    pdf.set_xy(start_x, start_y + row_h)
                     fill = not fill
 
                 pdf_output = pdf.output()
@@ -801,7 +845,7 @@ else:
             except Exception as e:
                 c_ex3.error(f"Blad PDF Księgowość: {e}")
 
-            # --- 4. PEŁNY ELEGANCKI RAPORT PDF POZIOMY (DLA CIEBIE) ---
+            # --- 4. PEŁNY ELEGANCKI RAPORT PDF POZIOMY (Z ZAWIJANIEM TEKSTU) ---
             try:
                 class ElegantFullPDF(FPDF):
                     def header(self):
@@ -856,8 +900,7 @@ else:
 
                 pdf_p.add_page()
 
-                # Szerokości kolumn dopasowane do kartki A4 w poziomie (szerokość 297mm - 20mm marginesów = 277mm)
-                cols_p = [18, 38, 22, 22, 26, 28, 32, 20, 71]
+                cols_p = [18, 38, 22, 22, 28, 28, 32, 18, 71]
                 headers_p = ["Data", "Sklep / Dostawca", "Kwota", "Dokument", "Metoda / Źródło", "Status", "Płatnik / Odbiorca", "Miejsce", "Projekt / Uwagi"]
 
                 pdf_p.set_fill_color(60, 60, 60)
@@ -879,31 +922,65 @@ else:
 
                 fill_p = False
                 for index, row in df_f.iterrows():
-                    bg_r, bg_g, bg_b = (245, 245, 245) if fill_p else (255, 255, 255)
-                    pdf_p.set_fill_color(bg_r, bg_g, bg_b)
-
-                    # 1. Data
-                    pdf_p.cell(cols_p[0], 8, pdf_p.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
-                    # 2. Sklep
-                    pdf_p.cell(cols_p[1], 8, pdf_p.clean_text(str(row['sklep'])[:22]), border='B', fill=True)
-                    # 3. Kwota
-                    pdf_p.cell(cols_p[2], 8, pdf_p.clean_text(f"{row['kwota']:.2f} zł"), border='B', align='R', fill=True)
-                    # 4. Rodzaj dok.
-                    pdf_p.cell(cols_p[3], 8, pdf_p.clean_text(str(row.get('rodzaj_dokumentu', ''))[:14]), border='B', fill=True)
-                    # 5. Metoda / Źródło
                     met_zrodlo = f"{row.get('metoda_platnosci', '')} ({row.get('zrodlo_srodkow', '')})" if row.get('zrodlo_srodkow') and row.get('zrodlo_srodkow') != row.get('metoda_platnosci') else str(row.get('metoda_platnosci', ''))
-                    pdf_p.cell(cols_p[4], 8, pdf_p.clean_text(met_zrodlo[:18]), border='B', fill=True)
-                    # 6. Status
-                    pdf_p.cell(cols_p[5], 8, pdf_p.clean_text(str(row.get('status', ''))[:18]), border='B', fill=True)
-                    # 7. Płatnik / Odbiorca
                     po_str = f"Pł: {row.get('platnik', '')} / Od: {row.get('odbiorca', '')}" if row.get('platnik') or row.get('odbiorca') else str(row.get('zgloszone_przez', ''))
-                    pdf_p.cell(cols_p[6], 8, pdf_p.clean_text(po_str[:22]), border='B', fill=True)
-                    # 8. Typ
-                    pdf_p.cell(cols_p[7], 8, pdf_p.clean_text(str(row.get('typ_sklepu', ''))[:12]), border='B', fill=True)
-                    # 9. Uwagi / Projekt
-                    pdf_p.cell(cols_p[8], 8, pdf_p.clean_text(str(row.get('uwagi', ''))[:50]), border='B', fill=True)
-                    pdf_p.ln()
+                    
+                    row_vals = [
+                        str(row['data_zakupu'])[:10],
+                        str(row['sklep']),
+                        f"{row['kwota']:.2f} zł",
+                        str(row.get('rodzaj_dokumentu', '')),
+                        met_zrodlo,
+                        str(row.get('status', '')),
+                        po_str,
+                        str(row.get('typ_sklepu', '')),
+                        str(row.get('uwagi', ''))
+                    ]
 
+                    row_wrapped = [get_wrapped_lines(pdf_p, val, cols_p[i] - 2) for i, val in enumerate(row_vals)]
+                    max_lines = max(len(lines) for lines in row_wrapped)
+                    line_h = 4.2
+                    row_h = max(max_lines * line_h + 2.5, 7)
+
+                    if pdf_p.get_y() + row_h > pdf_p.page_break_trigger:
+                        pdf_p.add_page()
+                        pdf_p.set_fill_color(60, 60, 60)
+                        pdf_p.set_text_color(255, 255, 255)
+                        if pdf_p.font_ready:
+                            pdf_p.set_font('Roboto', '', 9)
+                        else:
+                            pdf_p.set_font('helvetica', 'B', 9)
+                        for i, h in enumerate(headers_p):
+                            pdf_p.cell(cols_p[i], 9, pdf_p.clean_text(h), border=0, ln=0, align='C', fill=True)
+                        pdf_p.ln()
+                        pdf_p.set_text_color(0, 0, 0)
+                        if pdf_p.font_ready:
+                            pdf_p.set_font('Roboto', '', 8)
+                        else:
+                            pdf_p.set_font('helvetica', '', 8)
+
+                    start_y = pdf_p.get_y()
+                    start_x = 10
+                    bg_r, bg_g, bg_b = (245, 245, 245) if fill_p else (255, 255, 255)
+
+                    curr_x = start_x
+                    for i, lines in enumerate(row_wrapped):
+                        col_w = cols_p[i]
+
+                        pdf_p.set_fill_color(bg_r, bg_g, bg_b)
+                        pdf_p.rect(curr_x, start_y, col_w, row_h, 'F')
+                        pdf_p.line(curr_x, start_y + row_h, curr_x + col_w, start_y + row_h)
+
+                        text_y = start_y + 1.2
+                        align = 'R' if i == 2 else 'L'
+                        for line in lines:
+                            pdf_p.set_xy(curr_x + 1, text_y)
+                            pdf_p.cell(col_w - 2, line_h, line, border=0, align=align)
+                            text_y += line_h
+
+                        curr_x += col_w
+
+                    pdf_p.set_xy(start_x, start_y + row_h)
                     fill_p = not fill_p
 
                 pdf_p_output = pdf_p.output()
@@ -1019,8 +1096,8 @@ else:
 
         st.markdown("### 📊 Raportowanie")
         st.markdown("- **Wyszukiwarka:** Filtruj wydatki wedlug dat, osob, metod platnosci czy statusu rozliczenia.")
-        st.markdown("- **Eksporty dla Księgowości:** Służą do szybkiego przekazania podsumowania do księgowej (PDF Pionowy lub Excel).")
-        st.markdown("- **Wewnętrzny Pełny Raport PDF (Poziomy):** Zawiera wszystkie szczegółowe dane (w tym płatnika, odbiorcę, miejsce zakupu i projekt) zachowując elegancki układ.")
+        st.markdown("- **Zawijanie tekstu w PDF:** Długie nazwy sklepów, opisy projektów czy uwagi automatycznie zawijają się do kolejnych linii wiersza.")
+        st.markdown("- **Automatyczne strony PDF:** W przypadku długich raportów nagłówki tabel powtarzają się na każdej nowej stronie.")
 
         st.info("**💡 Wazna zasada:** Wszystkie wydatki, ktorym nadasz status *'Rozliczone z Marzeną ✅'*, automatycznie przestaja byc wliczane do sumy w polu *'Do zwrotu'* w module raportowym.")
         st.info("**🔐 Wygoda logowania:** Aplikacja probuje utrzymac logowanie po zwyklym odswiezeniu strony. Pelne wylogowanie nastapi po kliknieciu `Wyloguj` albo po wyczyszczeniu danych przegladarki.")
