@@ -1,4 +1,5 @@
 import os
+import re
 import urllib.request
 import streamlit as st
 from supabase import create_client, Client
@@ -9,6 +10,7 @@ import io
 import uuid
 import hashlib
 from fpdf import FPDF
+from PIL import Image
 
 # ============================================================
 # FAKTURKI-TEJBRANT
@@ -39,10 +41,6 @@ def czy_hash_sha256(wartosc: str) -> bool:
 
 
 def sprawdz_logowanie(login: str, haslo: str):
-    """
-    Logowanie kompatybilne ze starymi kontami.
-    Jesli konto ma stare haslo tekstowe, po poprawnym logowaniu zmienia je na hash.
-    """
     login = login.strip()
     haslo = haslo.strip()
 
@@ -57,11 +55,9 @@ def sprawdz_logowanie(login: str, haslo: str):
     zapisane_haslo = str(konto.get("haslo") or "")
     hash_wpisanego = hash_hasla(haslo)
 
-    # Nowy sposob: porownanie hashy
     if czy_hash_sha256(zapisane_haslo) and zapisane_haslo == hash_wpisanego:
         return konto
 
-    # Stary sposob: haslo bylo zapisane jako zwykly tekst
     if not czy_hash_sha256(zapisane_haslo) and zapisane_haslo == haslo:
         try:
             supabase.table("fakturki_konta").update({"haslo": hash_wpisanego}).eq("login", konto.get("login")).execute()
@@ -77,7 +73,6 @@ def g_idx(opt, val):
 
 
 def bezpieczna_lista_unikalnych(dane, kolumna):
-    """Zwraca posortowana liste unikalnych, niepustych wartosci z wyniku Supabase."""
     wartosci = []
     for x in dane or []:
         v = x.get(kolumna)
@@ -87,7 +82,6 @@ def bezpieczna_lista_unikalnych(dane, kolumna):
 
 
 def wyciagnij_projekt_z_uwag(tekst):
-    """Wyciaga projekt z pola uwagi w formacie: PROJEKT: xxx | yyy."""
     tekst = str(tekst or "")
     if tekst.startswith("PROJEKT:") and "|" in tekst:
         return tekst.split("|", 1)[0].replace("PROJEKT:", "").strip()
@@ -95,7 +89,6 @@ def wyciagnij_projekt_z_uwag(tekst):
 
 
 def wyciagnij_uwagi_bez_projektu(tekst):
-    """Zwraca sama czesc uwag bez prefixu PROJEKT."""
     tekst = str(tekst or "")
     if tekst.startswith("PROJEKT:") and "|" in tekst:
         return tekst.split("|", 1)[1].strip()
@@ -104,10 +97,6 @@ def wyciagnij_uwagi_bez_projektu(tekst):
 
 @st.cache_data(ttl=300)
 def pobierz_podpowiedzi():
-    """
-    Pobiera podpowiedzi z istniejacych wydatkow.
-    ttl=300 oznacza odswiezenie cache co 5 minut.
-    """
     try:
         res = supabase.table("wydatki").select("sklep, odbiorca, platnik, uwagi").execute()
         dane = res.data or []
@@ -128,9 +117,6 @@ def pobierz_podpowiedzi():
 
 
 def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
-    """
-    Jedno pole z podpowiedziami.
-    """
     opcje = sorted(list(set([str(x).strip() for x in opcje if str(x).strip()])), key=lambda x: x.lower())
 
     if value and str(value).strip() and value not in opcje:
@@ -153,9 +139,6 @@ def pole_z_podpowiedziami(label, opcje, key, value="", placeholder=""):
 
 
 def wgraj_dokument_do_supabase(plik_u=None, foto=None):
-    """
-    Wgrywa plik lub zdjecie do Supabase Storage.
-    """
     MAX_MB = 10
     DOZWOLONE_EXT = ["png", "jpg", "jpeg", "pdf"]
 
@@ -186,6 +169,88 @@ def wgraj_dokument_do_supabase(plik_u=None, foto=None):
         raise RuntimeError(f"Nie udalo sie wgrac dokumentu do Supabase: {e}")
 
 
+def analizuj_dokument_ocr(image_bytes):
+    """
+    Funkcja OCR próbuje odczytać tekst ze zdjęcia i wyciągnąć kwotę, datę oraz sklep.
+    """
+    wyniki = {"sklep": "", "kwota": 0.0, "data": None}
+    tekst = ""
+    
+    try:
+        import pytesseract
+        img = Image.open(io.BytesIO(image_bytes))
+        tekst = pytesseract.image_to_string(img, lang='pol')
+    except Exception:
+        try:
+            import pytesseract
+            img = Image.open(io.BytesIO(image_bytes))
+            tekst = pytesseract.image_to_string(img)
+        except Exception:
+            return wyniki, "Nie zainstalowano pakietu Tesseract w środowisku. Zainstaluj pytesseract / tesseract-ocr."
+
+    if not tekst.strip():
+        return wyniki, "Nie udało się odczytać tekstu ze zdjęcia."
+
+    # 1. Szukanie daty (YYYY-MM-DD lub DD.MM.YYYY)
+    dane_daty = re.findall(r'\b(20\d{2}[-/.](?:0[1-9]|1[0-2])[-/.](?:0[1-9]|[12]\d|3[01]))\b', tekst)
+    if not dane_daty:
+        dane_daty = re.findall(r'\b((?:0[1-9]|[12]\d|3[01])[-/.](?:0[1-9]|1[0-2])[-/.](?:20)?\d{2})\b', tekst)
+    
+    if dane_daty:
+        surowa_data = dane_daty[0].replace('/', '.').replace('-', '.')
+        try:
+            if len(surowa_data.split('.')[0]) == 4:
+                wyniki["data"] = datetime.strptime(surowa_data, "%Y.%m.%d").date()
+            else:
+                p = surowa_data.split('.')
+                rok = p[2] if len(p[2]) == 4 else f"20{p[2]}"
+                wyniki["data"] = date(int(rok), int(p[1]), int(p[0]))
+        except Exception:
+            pass
+
+    # 2. Szukanie kwoty brutto (np. SUMA, PLN, ZŁ, BRUTTO)
+    dane_kwoty = re.findall(r'(?:SUMA|BRUTTO|PLN|ZŁ|RAZEM)\s*[:=]?\s*(\d+[\.,]\d{2})', tekst, re.IGNORECASE)
+    if not dane_kwoty:
+        dane_kwoty = re.findall(r'\b(\d+[\.,]\d{2})\b', tekst)
+
+    if dane_kwoty:
+        kwoty_float = []
+        for k in dane_kwoty:
+            try:
+                kwoty_float.append(float(k.replace(',', '.')))
+            except ValueError:
+                pass
+        if kwoty_float:
+            wyniki["kwota"] = max(kwoty_float)
+
+    # 3. Szukanie nazwy sklepu (pierwsza niepusta linijka)
+    linie = [line.strip() for line in tekst.split('\n') if line.strip() and len(line.strip()) > 2]
+    if linie:
+        wyniki["sklep"] = linie[0][:40]
+
+    return wyniki, "Odczyt zakończony sukcesem."
+
+
+def get_wrapped_lines(pdf, text, max_w):
+    text = pdf.clean_text(str(text or ''))
+    words = text.split()
+    if not words:
+        return [""]
+    lines = []
+    curr = ""
+    for word in words:
+        test = f"{curr} {word}".strip()
+        if pdf.get_string_width(test) <= max_w:
+            curr = test
+        else:
+            if curr:
+                lines.append(curr)
+            curr = word
+    if curr:
+        lines.append(curr)
+    return lines if lines else [""]
+
+
 def zapisz_sesje(login, rola):
     st.session_state.zalogowany = True
     st.session_state.uzytkownik = login
@@ -205,27 +270,6 @@ def wyczysc_sesje():
         st.query_params.clear()
     except Exception:
         pass
-
-
-def get_wrapped_lines(pdf, text, max_w):
-    """Dzieli tekst na linie mieszczące się w zadanej szerokości mm."""
-    text = pdf.clean_text(str(text or ''))
-    words = text.split()
-    if not words:
-        return [""]
-    lines = []
-    curr = ""
-    for word in words:
-        test = f"{curr} {word}".strip()
-        if pdf.get_string_width(test) <= max_w:
-            curr = test
-        else:
-            if curr:
-                lines.append(curr)
-            curr = word
-    if curr:
-        lines.append(curr)
-    return lines if lines else [""]
 
 
 # ============================================================
@@ -289,21 +333,27 @@ else:
     # =========================================================================
     if menu == "➕ Dodaj Wydatek":
         st.title("➕ Dodaj nowy zakup")
+
         with st.container(border=True):
+            val_sklep = st.session_state.get("ocr_sklep", "")
+            val_kwota = st.session_state.get("ocr_kwota", 0.0)
+            val_data = st.session_state.get("ocr_data", date.today())
+
             sklep = pole_z_podpowiedziami(
                 "🏪 Sklep / Dostawca",
                 sklepy_podpowiedzi,
                 key="dodaj_sklep",
+                value=val_sklep,
                 placeholder="np. Castorama, Allegro, Würth"
             )
 
             col1, col2, col3 = st.columns(3)
 
             brak_kwoty = col1.checkbox("Nie znam kwoty (?)")
-            kwota = col1.number_input("💰 Kwota Brutto", min_value=0.0, step=0.01, format="%.2f", disabled=brak_kwoty)
+            kwota = col1.number_input("💰 Kwota Brutto", min_value=0.0, value=float(val_kwota), step=0.01, format="%.2f", disabled=brak_kwoty)
 
             brak_daty = col2.checkbox("Brak daty (?)")
-            data_zak = col2.date_input("📅 Data zakupu", date.today(), disabled=brak_daty)
+            data_zak = col2.date_input("📅 Data zakupu", val_data, disabled=brak_daty)
             rodzaj_doc = col3.selectbox("📄 Rodzaj dokumentu", ["KSeF", "Papierowy", "?"])
 
             st.divider()
@@ -322,10 +372,26 @@ else:
             st.divider()
             opcja_dok = st.radio("Dodaj dokument:", ["Brak", "📁 Wgraj plik", "📷 Zdjecie"], horizontal=True)
             plik_u, foto = None, None
+            
             if opcja_dok == "📁 Wgraj plik":
                 plik_u = st.file_uploader("Wybierz plik", type=["png", "jpg", "jpeg", "pdf"])
             elif opcja_dok == "📷 Zdjecie":
                 foto = st.camera_input("Zrob zdjecie")
+
+            # --- PRZYCISK ODZYTANIA OCR ---
+            if (plik_u or foto) and not plik_u.name.lower().endswith('.pdf') if plik_u else True:
+                if st.button("🤖 Odczytaj dane z dokumentu (OCR)", type="secondary"):
+                    b_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
+                    with st.spinner("Skanowanie dokumentu i odczytywanie danych..."):
+                        res_ocr, msg = analizuj_dokument_ocr(b_bytes)
+                        if res_ocr.get("sklep"):
+                            st.session_state["ocr_sklep"] = res_ocr["sklep"]
+                        if res_ocr.get("kwota"):
+                            st.session_state["ocr_kwota"] = res_ocr["kwota"]
+                        if res_ocr.get("data"):
+                            st.session_state["ocr_data"] = res_ocr["data"]
+                        st.toast(f"ℹ️ {msg}")
+                        st.rerun()
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
                 if sklep and sklep != "Brak podpowiedzi":
@@ -355,6 +421,11 @@ else:
                             "zgloszone_przez": st.session_state.uzytkownik,
                             "miesiac_rok": miesiac_rok
                         }).execute()
+
+                        # Czyszczenie pamięci podręcznej OCR
+                        for k in ["ocr_sklep", "ocr_kwota", "ocr_data"]:
+                            if k in st.session_state:
+                                del st.session_state[k]
 
                         pobierz_podpowiedzi.clear()
                         st.balloons()
@@ -543,7 +614,6 @@ else:
 
             kol_r = ['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']
 
-            # --- PRZEŁĄCZNIK WIDOKU TABELI ---
             widok_tabeli = st.radio("👁️ Widok tabeli na ekranie:", ["Uproszczony (dla księgowości)", "Pełny (wszystkie kolumny)"], horizontal=True)
 
             if widok_tabeli == "Pełny (wszystkie kolumny)":
@@ -561,9 +631,9 @@ else:
             st.divider()
             st.subheader("📥 Pobieranie raportów")
 
-            c_ex1, c_ex2, c_ex3 = st.columns(3)
+            c_ex1, c_ex2, c_ex3, c_ex4 = st.columns(4)
 
-            # --- 1. PEŁNY RAPORT EXCEL DLA CIEBIE ---
+            # --- 1. PEŁNY RAPORT EXCEL ---
             try:
                 kol_pelne = [
                     'id', 'data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 
@@ -618,6 +688,20 @@ else:
             except Exception as e:
                 c_ex1.error(f"Błąd Pełny Raport Excel: {e}")
 
+            # --- 2. POBIERANIE CSV ---
+            try:
+                kol_pelne_csv = [k for k in ['id', 'data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 'metoda_platnosci', 'status', 'zrodlo_srodkow', 'odbiorca', 'platnik', 'typ_sklepu', 'uwagi', 'zdjecie_url', 'zgloszone_przez'] if k in df_f.columns]
+                csv_bytes = df_f[kol_pelne_csv].to_csv(index=False).encode('utf-8-sig')
+                c_ex2.download_button(
+                    "📄 Pobierz CSV",
+                    data=csv_bytes,
+                    file_name=f"raport_wydatkow_{date.today()}.csv",
+                    mime="text/csv",
+                    use_container_width=True
+                )
+            except Exception as e:
+                c_ex2.error(f"Błąd CSV: {e}")
+
             # --- PRZYGOTOWANIE CZCIONEK PDF ---
             font_path = "Roboto-Regular.ttf"
             font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
@@ -637,7 +721,7 @@ else:
             else:
                 okres_str = "Wszystkie wydatki"
 
-            # --- 2. RAPORT PDF PIONOWY (DLA KSIĘGOWOŚCI) ---
+            # --- 3. RAPORT PDF PIONOWY (DLA KSIĘGOWOŚCI) ---
             try:
                 class ElegantPDF(FPDF):
                     def header(self):
@@ -788,7 +872,7 @@ else:
                     fill = not fill
 
                 pdf_output = pdf.output()
-                c_ex2.download_button(
+                c_ex3.download_button(
                     label="📄 Raport dla księgowości PDF (pionowo)",
                     data=bytes(pdf_output),
                     file_name=f"raport_ksiegowosc_pion_{date.today()}.pdf",
@@ -796,9 +880,9 @@ else:
                     use_container_width=True
                 )
             except Exception as e:
-                c_ex2.error(f"Blad PDF Księgowość: {e}")
+                c_ex3.error(f"Blad PDF Księgowość: {e}")
 
-            # --- 3. PEŁNY ELEGANCKI RAPORT PDF POZIOMY ---
+            # --- 4. PEŁNY ELEGANCKI RAPORT PDF POZIOMY ---
             try:
                 class ElegantFullPDF(FPDF):
                     def header(self):
@@ -937,7 +1021,7 @@ else:
                     fill_p = not fill_p
 
                 pdf_p_output = pdf_p.output()
-                c_ex3.download_button(
+                c_ex4.download_button(
                     label="🔍 Pełny raport PDF (poziomo)",
                     data=bytes(pdf_p_output),
                     file_name=f"raport_pelny_poziom_{date.today()}.pdf",
@@ -946,7 +1030,7 @@ else:
                     type="primary"
                 )
             except Exception as e:
-                c_ex3.error(f"Blad Pełny PDF: {e}")
+                c_ex4.error(f"Blad Pełny PDF: {e}")
         else:
             st.info("Brak danych do raportu.")
 
@@ -1039,6 +1123,7 @@ else:
 
         st.markdown("### ➕ Dodawanie wydatkow")
         st.markdown("- **Podpowiedzi:** Przy polach Sklep, Kto odebral, Kto zaplacil i Projekt aplikacja pokazuje wartosci uzyte juz wczesniej. Kliknij pole i zacznij pisac pierwsze litery, aby szybciej znalezc wpis.")
+        st.markdown("- **Skanowanie OCR:** Po wybraniu pliku lub zrobieniu zdjęcia możesz kliknąć przycisk `🤖 Odczytaj dane z dokumentu (OCR)`, aby system sam uzupełnił kwotę, datę i nazwę sklepu.")
         st.markdown("- **Dokumenty:** Uzywaj aparatu telefonu do szybkiego skanowania paragonow lub wgrywaj gotowe pliki PDF/JPG z komputera.")
         st.markdown("- **Braki w danych:** Jesli w momencie dodawania nie znasz dokladnej kwoty lub daty, zaznacz okienka *'Brak daty'* lub *'Nie znam kwoty'*. System wstawi znak `?`, co ulatwi pozniejsze uzupelnienie danych.")
 
@@ -1049,8 +1134,8 @@ else:
 
         st.markdown("### 📊 Raportowanie")
         st.markdown("- **Wyszukiwarka:** Filtruj wydatki wedlug dat, osob, metod platnosci czy statusu rozliczenia.")
+        st.markdown("- **Pobieranie CSV:** Przycisk `📄 Pobierz CSV` generuje uniwersalny plik danych gotowy do otwarcia w dowolnym arkuszu kalkulacyjnym.")
         st.markdown("- **Zawijanie tekstu w PDF:** Długie nazwy sklepów, opisy projektów czy uwagi automatycznie zawijają się do kolejnych linii wiersza.")
-        st.markdown("- **Automatyczne strony PDF:** W przypadku długich raportów nagłówki tabel powtarzają się na każdej nowej stronie.")
 
         st.info("**💡 Wazna zasada:** Wszystkie wydatki, ktorym nadasz status *'Rozliczone z Marzeną ✅'*, automatycznie przestaja byc wliczane do sumy w polu *'Do zwrotu'* w module raportowym.")
         st.info("**🔐 Wygoda logowania:** Aplikacja probuje utrzymac logowanie po zwyklym odswiezeniu strony. Pelne wylogowanie nastapi po kliknieciu `Wyloguj` albo po wyczyszczeniu danych przegladarki.")
