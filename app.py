@@ -561,56 +561,9 @@ else:
             st.divider()
             st.subheader("📥 Pobieranie raportów")
 
-            c_ex1, c_ex2, c_ex3, c_ex4 = st.columns(4)
+            c_ex1, c_ex2, c_ex3 = st.columns(3)
 
-            # --- 1. RAPORT EXCEL DLA KSIĘGOWOŚCI ---
-            try:
-                import xlsxwriter
-                buffer_ksiegowa = io.BytesIO()
-                with pd.ExcelWriter(buffer_ksiegowa, engine='xlsxwriter') as writer:
-                    df_f[kol_r].to_excel(writer, index=False, sheet_name='Raport_Ksiegowosc', startrow=2)
-                    workbook = writer.book
-                    worksheet = writer.sheets['Raport_Ksiegowosc']
-
-                    title_format = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': 'white', 'bg_color': '#D32F2F', 'align': 'center', 'border': 1})
-                    worksheet.merge_range('A1:G2', f"RAPORT FAKTUR (Wygenerowano: {datetime.now().strftime('%Y-%m-%d %H:%M')})", title_format)
-
-                    header_format = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
-                    cell_format = workbook.add_format({'border': 1, 'text_wrap': True, 'valign': 'vcenter'})
-                    num_format = workbook.add_format({'border': 1, 'num_format': '#,##0.00 "zl"', 'align': 'center'})
-
-                    for col_num, value in enumerate(kol_r):
-                        worksheet.write(2, col_num, value, header_format)
-
-                    for row_num in range(len(df_f)):
-                        for col_num in range(len(kol_r)):
-                            val = df_f[kol_r].iloc[row_num, col_num]
-                            if col_num == 2:
-                                worksheet.write(row_num + 3, col_num, val, num_format)
-                            else:
-                                worksheet.write(row_num + 3, col_num, val, cell_format)
-
-                    worksheet.set_column('A:A', 12)
-                    worksheet.set_column('B:B', 22)
-                    worksheet.set_column('C:C', 14)
-                    worksheet.set_column('D:D', 25)
-                    worksheet.set_column('E:E', 18)
-                    worksheet.set_column('F:F', 14)
-                    worksheet.set_column('G:G', 40)
-                    worksheet.set_landscape()
-                    worksheet.set_paper(9)
-                    worksheet.fit_to_pages(1, 0)
-
-                c_ex1.download_button(
-                    "📊 Księgowość Excel (.xlsx)", 
-                    data=buffer_ksiegowa.getvalue(), 
-                    file_name=f"raport_ksiegowosc_{date.today()}.xlsx", 
-                    use_container_width=True
-                )
-            except Exception as e:
-                c_ex1.error(f"Błąd Excel Księgowość: {e}")
-
-            # --- 2. PEŁNY RAPORT EXCEL DLA CIEBIE ---
+            # --- 1. PEŁNY RAPORT EXCEL DLA CIEBIE ---
             try:
                 kol_pelne = [
                     'id', 'data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 
@@ -656,14 +609,14 @@ else:
                         max_len = max(df_f[col].astype(str).map(len).max(), len(col)) + 3
                         worksheet.set_column(idx, idx, min(max_len, 50))
 
-                c_ex2.download_button(
-                    "🔍 Pełny Raport Excel (.xlsx)", 
+                c_ex1.download_button(
+                    "🔍 Pełny Raport Excel", 
                     data=buffer_pelny.getvalue(), 
                     file_name=f"raport_pelny_{date.today()}.xlsx", 
                     use_container_width=True
                 )
             except Exception as e:
-                c_ex2.error(f"Błąd Pełny Raport Excel: {e}")
+                c_ex1.error(f"Błąd Pełny Raport Excel: {e}")
 
             # --- PRZYGOTOWANIE CZCIONEK PDF ---
             font_path = "Roboto-Regular.ttf"
@@ -684,7 +637,7 @@ else:
             else:
                 okres_str = "Wszystkie wydatki"
 
-            # --- 3. RAPORT PDF PIONOWY (Z ZAWIJANIEM TEKSTU) ---
+            # --- 2. RAPORT PDF PIONOWY (DLA KSIĘGOWOŚCI) ---
             try:
                 class ElegantPDF(FPDF):
                     def header(self):
@@ -835,17 +788,17 @@ else:
                     fill = not fill
 
                 pdf_output = pdf.output()
-                c_ex3.download_button(
-                    label="📄 Księgowość PDF (Pion)",
+                c_ex2.download_button(
+                    label="📄 Raport dla księgowości PDF (pionowo)",
                     data=bytes(pdf_output),
                     file_name=f"raport_ksiegowosc_pion_{date.today()}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
             except Exception as e:
-                c_ex3.error(f"Blad PDF Księgowość: {e}")
+                c_ex2.error(f"Blad PDF Księgowość: {e}")
 
-            # --- 4. PEŁNY ELEGANCKI RAPORT PDF POZIOMY (Z ZAWIJANIEM TEKSTU) ---
+            # --- 3. PEŁNY ELEGANCKI RAPORT PDF POZIOMY ---
             try:
                 class ElegantFullPDF(FPDF):
                     def header(self):
@@ -984,8 +937,8 @@ else:
                     fill_p = not fill_p
 
                 pdf_p_output = pdf_p.output()
-                c_ex4.download_button(
-                    label="🔍 Pełny PDF (Poziom)",
+                c_ex3.download_button(
+                    label="🔍 Pełny raport PDF (poziomo)",
                     data=bytes(pdf_p_output),
                     file_name=f"raport_pelny_poziom_{date.today()}.pdf",
                     mime="application/pdf",
@@ -993,7 +946,7 @@ else:
                     type="primary"
                 )
             except Exception as e:
-                c_ex4.error(f"Blad Pełny PDF: {e}")
+                c_ex3.error(f"Blad Pełny PDF: {e}")
         else:
             st.info("Brak danych do raportu.")
 
