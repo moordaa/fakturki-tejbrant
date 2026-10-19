@@ -524,15 +524,18 @@ else:
             st.dataframe(df_f[kol_r], use_container_width=True)
 
             st.divider()
-            c_ex1, c_ex2 = st.columns(2)
+            st.subheader("📥 Pobieranie raportów")
 
+            c_ex1, c_ex2, c_ex3 = st.columns(3)
+
+            # --- 1. RAPORT EXCEL DLA KSIĘGOWOŚCI ---
             try:
                 import xlsxwriter
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_f[kol_r].to_excel(writer, index=False, sheet_name='Raport', startrow=2)
+                buffer_ksiegowa = io.BytesIO()
+                with pd.ExcelWriter(buffer_ksiegowa, engine='xlsxwriter') as writer:
+                    df_f[kol_r].to_excel(writer, index=False, sheet_name='Raport_Ksiegowosc', startrow=2)
                     workbook = writer.book
-                    worksheet = writer.sheets['Raport']
+                    worksheet = writer.sheets['Raport_Ksiegowosc']
 
                     title_format = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': 'white', 'bg_color': '#D32F2F', 'align': 'center', 'border': 1})
                     worksheet.merge_range('A1:G2', f"RAPORT FAKTUR (Wygenerowano: {datetime.now().strftime('%Y-%m-%d %H:%M')})", title_format)
@@ -563,10 +566,72 @@ else:
                     worksheet.set_paper(9)
                     worksheet.fit_to_pages(1, 0)
 
-                c_ex1.download_button("📊 Pobierz LUX EXCEL (.xlsx)", data=buffer.getvalue(), file_name=f"raport_{date.today()}.xlsx", use_container_width=True)
-            except Exception:
-                c_ex1.error("Blad wtyczki Excel. Sprawdz requirements.txt na GitHubie.")
+                c_ex1.download_button(
+                    "📊 Księgowość Excel (.xlsx)", 
+                    data=buffer_ksiegowa.getvalue(), 
+                    file_name=f"raport_ksiegowosc_{date.today()}.xlsx", 
+                    use_container_width=True
+                )
+            except Exception as e:
+                c_ex1.error(f"Błąd Excel Księgowość: {e}")
 
+            # --- 2. PEŁNY RAPORT EXCEL DLA CIEBIE (WSZYSTKIE POLA) ---
+            try:
+                kol_pelne = [
+                    'id', 'data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 
+                    'metoda_platnosci', 'status', 'zrodlo_srodkow', 'odbiorca', 
+                    'platnik', 'typ_sklepu', 'uwagi', 'zdjecie_url', 'zgloszone_przez'
+                ]
+                
+                kol_dostepne = [k for k in kol_pelne if k in df_f.columns]
+                
+                buffer_pelny = io.BytesIO()
+                with pd.ExcelWriter(buffer_pelny, engine='xlsxwriter') as writer:
+                    df_f[kol_dostepne].to_excel(writer, index=False, sheet_name='Pełny_Raport', startrow=2)
+                    workbook = writer.book
+                    worksheet = writer.sheets['Pełny_Raport']
+
+                    title_format_p = workbook.add_format({'bold': True, 'font_size': 14, 'font_color': 'white', 'bg_color': '#1E88E5', 'align': 'center', 'border': 1})
+                    worksheet.merge_range(0, 0, 1, len(kol_dostepne) - 1, f"PEŁNY RAPORT WEWNĘTRZNY ({datetime.now().strftime('%Y-%m-%d %H:%M')})", title_format_p)
+
+                    header_format_p = workbook.add_format({'bold': True, 'bg_color': '#E3F2FD', 'border': 1, 'align': 'center'})
+                    cell_format_p = workbook.add_format({'border': 1, 'valign': 'vcenter'})
+                    num_format_p = workbook.add_format({'border': 1, 'num_format': '#,##0.00 "zl"', 'align': 'center'})
+                    url_format_p = workbook.add_format({'border': 1, 'font_color': 'blue', 'underline': 1})
+
+                    for col_num, value in enumerate(kol_dostepne):
+                        worksheet.write(2, col_num, value, header_format_p)
+
+                    for row_num in range(len(df_f)):
+                        for col_num in range(len(kol_dostepne)):
+                            col_name = kol_dostepne[col_num]
+                            val = df_f[col_name].iloc[row_num]
+                            
+                            if pd.isna(val):
+                                val = ""
+
+                            if col_name == 'kwota':
+                                worksheet.write(row_num + 3, col_num, float(val), num_format_p)
+                            elif col_name == 'zdjecie_url' and str(val).startswith('http'):
+                                worksheet.write_url(row_num + 3, col_num, str(val), url_format_p, string="Zobacz załącznik")
+                            else:
+                                worksheet.write(row_num + 3, col_num, str(val), cell_format_p)
+
+                    for idx, col in enumerate(kol_dostepne):
+                        max_len = max(df_f[col].astype(str).map(len).max(), len(col)) + 3
+                        worksheet.set_column(idx, idx, min(max_len, 50))
+
+                c_ex2.download_button(
+                    "🔍 Pełny Raport Excel (.xlsx)", 
+                    data=buffer_pelny.getvalue(), 
+                    file_name=f"raport_pelny_{date.today()}.xlsx", 
+                    use_container_width=True,
+                    type="primary"
+                )
+            except Exception as e:
+                c_ex2.error(f"Błąd Pełny Raport: {e}")
+
+            # --- 3. RAPORT PDF ---
             try:
                 class ElegantPDF(FPDF):
                     def header(self):
@@ -713,15 +778,15 @@ else:
                     fill = not fill
 
                 pdf_output = pdf.output()
-                c_ex2.download_button(
-                    label="📄 Pobierz Elegancki PDF (Pionowy)",
+                c_ex3.download_button(
+                    label="📄 Elegancki PDF (Pionowy)",
                     data=bytes(pdf_output),
                     file_name=f"raport_wydatkow_pion_{date.today()}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
             except Exception as e:
-                c_ex2.error(f"Blad PDF: {e}")
+                c_ex3.error(f"Blad PDF: {e}")
         else:
             st.info("Brak danych do raportu.")
 
@@ -824,8 +889,9 @@ else:
 
         st.markdown("### 📊 Raportowanie")
         st.markdown("- **Wyszukiwarka:** Filtruj wydatki wedlug dat, osob, metod platnosci czy statusu rozliczenia.")
-        st.markdown("- **Eksport do Excela (.xlsx):** Generuje elegancki arkusz kalkulacyjny z gotowym formatowaniem walutowym, dopasowanymi szerokosciami kolumn i kolorowym naglowkiem. Plik jest automatycznie sformatowany do wydruku w poziomie (A4).")
-        st.markdown("- **Eksport do PDF:** Tworzy zwarty, pionowy raport z ukladem zebry, czyli na przemian szare i biale wiersze.")
+        st.markdown("- **Eksport do Excela dla księgowości:** Generuje czytelny arkusz dla biura rachunkowego z podstawowymi danymi rozliczeniowymi.")
+        st.markdown("- **Pełny Raport Excel (Wewnętrzny):** Eksportuje kompletne dane dotyczące zakupu (w tym odbierającego, płacącego, źródło środków, miejsce zakupu oraz klikalne linki do dołączonych skanów/zdjęć).")
+        st.markdown("- **Eksport do PDF:** Tworzy zwarty, pionowy raport z ukladem zebry.")
 
         st.info("**💡 Wazna zasada:** Wszystkie wydatki, ktorym nadasz status *'Rozliczone z Marzeną ✅'*, automatycznie przestaja byc wliczane do sumy w polu *'Do zwrotu'* w module raportowym.")
         st.info("**🔐 Wygoda logowania:** Aplikacja probuje utrzymac logowanie po zwyklym odswiezeniu strony. Pelne wylogowanie nastapi po kliknieciu `Wyloguj` albo po wyczyszczeniu danych przegladarki.")
