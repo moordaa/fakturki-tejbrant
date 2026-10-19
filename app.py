@@ -521,12 +521,26 @@ else:
             m2.metric("Do zwrotu (Pryw/Got)", f"{do_zw['kwota'].sum():.2f} zl")
 
             kol_r = ['data_zakupu', 'sklep', 'kwota', 'status', 'metoda_platnosci', 'zgloszone_przez', 'uwagi']
-            st.dataframe(df_f[kol_r], use_container_width=True)
+
+            # --- PRZEŁĄCZNIK WIDOKU TABELI ---
+            widok_tabeli = st.radio("👁️ Widok tabeli na ekranie:", ["Uproszczony (dla księgowości)", "Pełny (wszystkie kolumny)"], horizontal=True)
+
+            if widok_tabeli == "Pełny (wszystkie kolumny)":
+                kol_pelne = [
+                    'id', 'data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 
+                    'metoda_platnosci', 'status', 'zrodlo_srodkow', 'odbiorca', 
+                    'platnik', 'typ_sklepu', 'uwagi', 'zdjecie_url', 'zgloszone_przez'
+                ]
+                kol_do_wyswietlenia = [k for k in kol_pelne if k in df_f.columns]
+            else:
+                kol_do_wyswietlenia = kol_r
+
+            st.dataframe(df_f[kol_do_wyswietlenia], use_container_width=True)
 
             st.divider()
             st.subheader("📥 Pobieranie raportów")
 
-            c_ex1, c_ex2, c_ex3 = st.columns(3)
+            c_ex1, c_ex2, c_ex3, c_ex4 = st.columns(4)
 
             # --- 1. RAPORT EXCEL DLA KSIĘGOWOŚCI ---
             try:
@@ -575,7 +589,7 @@ else:
             except Exception as e:
                 c_ex1.error(f"Błąd Excel Księgowość: {e}")
 
-            # --- 2. PEŁNY RAPORT EXCEL DLA CIEBIE (WSZYSTKIE POLA) ---
+            # --- 2. PEŁNY RAPORT EXCEL DLA CIEBIE ---
             try:
                 kol_pelne = [
                     'id', 'data_zakupu', 'sklep', 'kwota', 'rodzaj_dokumentu', 
@@ -625,13 +639,31 @@ else:
                     "🔍 Pełny Raport Excel (.xlsx)", 
                     data=buffer_pelny.getvalue(), 
                     file_name=f"raport_pelny_{date.today()}.xlsx", 
-                    use_container_width=True,
-                    type="primary"
+                    use_container_width=True
                 )
             except Exception as e:
-                c_ex2.error(f"Błąd Pełny Raport: {e}")
+                c_ex2.error(f"Błąd Pełny Raport Excel: {e}")
 
-            # --- 3. RAPORT PDF ---
+            # --- PRZYGOTOWANIE CZCIONEK PDF ---
+            font_path = "Roboto-Regular.ttf"
+            font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
+            if not os.path.exists(font_path):
+                try:
+                    urllib.request.urlretrieve(font_url, font_path)
+                except Exception:
+                    pass
+
+            rok_str = f_rok if f_rok != "Wszystkie" else str(datetime.now().year)
+            if f_mies != "Wszystkie":
+                okres_str = f"Miesiąc: {f_mies} | Rok: {rok_str}"
+            elif f_rok != "Wszystkie":
+                okres_str = f"Rok: {f_rok}"
+            elif len(f_zakres) == 2:
+                okres_str = f"{f_zakres[0].strftime('%d.%m.%Y')} - {f_zakres[1].strftime('%d.%m.%Y')}"
+            else:
+                okres_str = "Wszystkie wydatki"
+
+            # --- 3. RAPORT PDF PIONOWY (DLA KSIĘGOWOŚCI) ---
             try:
                 class ElegantPDF(FPDF):
                     def header(self):
@@ -666,7 +698,7 @@ else:
                         self.cell(0, 10, f'Strona {self.page_no()} / {{nb}}', align='C')
 
                     def clean_text(self, tekst):
-                        t = str(tekst).replace('✅', '').strip()
+                        t = str(tekst or '').replace('✅', '').strip()
                         if not hasattr(self, 'font_ready') or not self.font_ready:
                             zamienniki = {'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z',
                                           'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z'}
@@ -674,26 +706,9 @@ else:
                                 t = t.replace(pl, asc)
                         return t
 
-                font_path = "Roboto-Regular.ttf"
-                font_url = "https://raw.githubusercontent.com/google/fonts/main/ofl/roboto/Roboto-Regular.ttf"
-                if not os.path.exists(font_path):
-                    try:
-                        urllib.request.urlretrieve(font_url, font_path)
-                    except Exception:
-                        pass
-
                 pdf = ElegantPDF(orientation='P', unit='mm', format='A4')
                 pdf.alias_nb_pages()
-
-                rok_str = f_rok if f_rok != "Wszystkie" else str(datetime.now().year)
-                if f_mies != "Wszystkie":
-                    pdf.okres_raportu = f"Miesiąc: {f_mies} | Rok: {rok_str}"
-                elif f_rok != "Wszystkie":
-                    pdf.okres_raportu = f"Rok: {f_rok}"
-                elif len(f_zakres) == 2:
-                    pdf.okres_raportu = f"{f_zakres[0].strftime('%d.%m.%Y')} - {f_zakres[1].strftime('%d.%m.%Y')}"
-                else:
-                    pdf.okres_raportu = "Wszystkie wydatki"
+                pdf.okres_raportu = okres_str
 
                 if os.path.exists(font_path):
                     pdf.add_font('Roboto', '', font_path)
@@ -736,32 +751,30 @@ else:
                     pdf.cell(cols[1], 9, pdf.clean_text(str(row['sklep'])[:35]), border='B', fill=True)
                     pdf.cell(cols[2], 9, pdf.clean_text(f"{row['kwota']:.2f} zl"), border='B', align='R', fill=True)
 
-                    # --- KOLOR DLA RODZAJU DOKUMENTU ---
                     rodzaj_doc = str(row.get('rodzaj_dokumentu', '')).strip()
                     rodzaj_lower = rodzaj_doc.lower()
 
                     if "ksef" in rodzaj_lower:
-                        pdf.set_fill_color(209, 231, 221)  # Delikatny zielony
+                        pdf.set_fill_color(209, 231, 221)
                     elif any(k in rodzaj_lower for k in ["papier", "paragon"]):
-                        pdf.set_fill_color(207, 226, 255)  # Delikatny niebieski
+                        pdf.set_fill_color(207, 226, 255)
                     else:
                         pdf.set_fill_color(bg_r, bg_g, bg_b)
 
                     pdf.cell(cols[3], 9, pdf.clean_text(rodzaj_doc[:18]), border='B', fill=True)
 
-                    # --- KOLOR DLA METODY PŁATNOŚCI ---
                     metoda_tekst = str(row['metoda_platnosci']).strip()
                     metoda_lower = metoda_tekst.lower()
                     zrodlo_lower = str(row.get('zrodlo_srodkow', '')).lower()
 
                     if "karta firmowa" in metoda_lower or "karta firmowa" in zrodlo_lower:
-                        pdf.set_fill_color(226, 227, 243)  # Delikatny fiolet
+                        pdf.set_fill_color(226, 227, 243)
                     elif "karta prywatna" in metoda_lower or "karta prywatna" in zrodlo_lower:
-                        pdf.set_fill_color(255, 235, 204)  # Delikatny pomarańcz/brzoskwinia
+                        pdf.set_fill_color(255, 235, 204)
                     elif "gotowka" in metoda_lower or "gotówka" in metoda_lower or "gotowka" in zrodlo_lower or "gotówka" in zrodlo_lower:
-                        pdf.set_fill_color(255, 249, 196)  # Delikatny żółty
+                        pdf.set_fill_color(255, 249, 196)
                     elif any(k in metoda_lower for k in ["przelew", "pro forma"]):
-                        pdf.set_fill_color(235, 237, 239)  # Delikatny szary
+                        pdf.set_fill_color(235, 237, 239)
                     else:
                         pdf.set_fill_color(bg_r, bg_g, bg_b)
 
@@ -779,14 +792,131 @@ else:
 
                 pdf_output = pdf.output()
                 c_ex3.download_button(
-                    label="📄 Elegancki PDF (Pionowy)",
+                    label="📄 Księgowość PDF (Pion)",
                     data=bytes(pdf_output),
-                    file_name=f"raport_wydatkow_pion_{date.today()}.pdf",
+                    file_name=f"raport_ksiegowosc_pion_{date.today()}.pdf",
                     mime="application/pdf",
                     use_container_width=True
                 )
             except Exception as e:
-                c_ex3.error(f"Blad PDF: {e}")
+                c_ex3.error(f"Blad PDF Księgowość: {e}")
+
+            # --- 4. PEŁNY ELEGANCKI RAPORT PDF POZIOMY (DLA CIEBIE) ---
+            try:
+                class ElegantFullPDF(FPDF):
+                    def header(self):
+                        self.set_fill_color(211, 47, 47)
+                        self.rect(0, 0, 297, 28, 'F')
+
+                        if hasattr(self, 'font_ready') and self.font_ready:
+                            self.set_font('Roboto', '', 15)
+                        else:
+                            self.set_font('helvetica', 'B', 15)
+
+                        self.set_text_color(255, 255, 255)
+                        tytul = f"Pełny Raport Wewnętrzny Wydatków - wygenerowano dnia {datetime.now().strftime('%d.%m.%Y')}"
+                        self.cell(0, 9, self.clean_text(tytul), ln=True, align='C')
+
+                        if hasattr(self, 'font_ready') and self.font_ready:
+                            self.set_font('Roboto', '', 10)
+                        else:
+                            self.set_font('helvetica', '', 10)
+
+                        okres = getattr(self, 'okres_raportu', '')
+                        self.cell(0, 7, self.clean_text(f"Okres raportu: {okres}"), ln=True, align='C')
+                        self.ln(12)
+
+                    def footer(self):
+                        self.set_y(-15)
+                        if hasattr(self, 'font_ready') and self.font_ready:
+                            self.set_font('Roboto', '', 8)
+                        else:
+                            self.set_font('helvetica', 'I', 8)
+                        self.set_text_color(128, 128, 128)
+                        self.cell(0, 10, f'Strona {self.page_no()} / {{nb}}', align='C')
+
+                    def clean_text(self, tekst):
+                        t = str(tekst or '').replace('✅', '').strip()
+                        if not hasattr(self, 'font_ready') or not self.font_ready:
+                            zamienniki = {'ą': 'a', 'ć': 'c', 'ę': 'e', 'ł': 'l', 'ń': 'n', 'ó': 'o', 'ś': 's', 'ź': 'z', 'ż': 'z',
+                                          'Ą': 'A', 'Ć': 'C', 'Ę': 'E', 'Ł': 'L', 'Ń': 'N', 'Ó': 'O', 'Ś': 'S', 'Ź': 'Z', 'Ż': 'Z'}
+                            for pl, asc in zamienniki.items():
+                                t = t.replace(pl, asc)
+                        return t
+
+                pdf_p = ElegantFullPDF(orientation='L', unit='mm', format='A4')
+                pdf_p.alias_nb_pages()
+                pdf_p.okres_raportu = okres_str
+
+                if os.path.exists(font_path):
+                    pdf_p.add_font('Roboto', '', font_path)
+                    pdf_p.font_ready = True
+                else:
+                    pdf_p.font_ready = False
+
+                pdf_p.add_page()
+
+                # Szerokości kolumn dopasowane do kartki A4 w poziomie (szerokość 297mm - 20mm marginesów = 277mm)
+                cols_p = [18, 38, 22, 22, 26, 28, 32, 20, 71]
+                headers_p = ["Data", "Sklep / Dostawca", "Kwota", "Dokument", "Metoda / Źródło", "Status", "Płatnik / Odbiorca", "Miejsce", "Projekt / Uwagi"]
+
+                pdf_p.set_fill_color(60, 60, 60)
+                pdf_p.set_text_color(255, 255, 255)
+                if pdf_p.font_ready:
+                    pdf_p.set_font('Roboto', '', 9)
+                else:
+                    pdf_p.set_font('helvetica', 'B', 9)
+
+                for i, h in enumerate(headers_p):
+                    pdf_p.cell(cols_p[i], 9, pdf_p.clean_text(h), border=0, ln=0, align='C', fill=True)
+                pdf_p.ln()
+
+                pdf_p.set_text_color(0, 0, 0)
+                if pdf_p.font_ready:
+                    pdf_p.set_font('Roboto', '', 8)
+                else:
+                    pdf_p.set_font('helvetica', '', 8)
+
+                fill_p = False
+                for index, row in df_f.iterrows():
+                    bg_r, bg_g, bg_b = (245, 245, 245) if fill_p else (255, 255, 255)
+                    pdf_p.set_fill_color(bg_r, bg_g, bg_b)
+
+                    # 1. Data
+                    pdf_p.cell(cols_p[0], 8, pdf_p.clean_text(str(row['data_zakupu'])[:10]), border='B', fill=True)
+                    # 2. Sklep
+                    pdf_p.cell(cols_p[1], 8, pdf_p.clean_text(str(row['sklep'])[:22]), border='B', fill=True)
+                    # 3. Kwota
+                    pdf_p.cell(cols_p[2], 8, pdf_p.clean_text(f"{row['kwota']:.2f} zł"), border='B', align='R', fill=True)
+                    # 4. Rodzaj dok.
+                    pdf_p.cell(cols_p[3], 8, pdf_p.clean_text(str(row.get('rodzaj_dokumentu', ''))[:14]), border='B', fill=True)
+                    # 5. Metoda / Źródło
+                    met_zrodlo = f"{row.get('metoda_platnosci', '')} ({row.get('zrodlo_srodkow', '')})" if row.get('zrodlo_srodkow') and row.get('zrodlo_srodkow') != row.get('metoda_platnosci') else str(row.get('metoda_platnosci', ''))
+                    pdf_p.cell(cols_p[4], 8, pdf_p.clean_text(met_zrodlo[:18]), border='B', fill=True)
+                    # 6. Status
+                    pdf_p.cell(cols_p[5], 8, pdf_p.clean_text(str(row.get('status', ''))[:18]), border='B', fill=True)
+                    # 7. Płatnik / Odbiorca
+                    po_str = f"Pł: {row.get('platnik', '')} / Od: {row.get('odbiorca', '')}" if row.get('platnik') or row.get('odbiorca') else str(row.get('zgloszone_przez', ''))
+                    pdf_p.cell(cols_p[6], 8, pdf_p.clean_text(po_str[:22]), border='B', fill=True)
+                    # 8. Typ
+                    pdf_p.cell(cols_p[7], 8, pdf_p.clean_text(str(row.get('typ_sklepu', ''))[:12]), border='B', fill=True)
+                    # 9. Uwagi / Projekt
+                    pdf_p.cell(cols_p[8], 8, pdf_p.clean_text(str(row.get('uwagi', ''))[:50]), border='B', fill=True)
+                    pdf_p.ln()
+
+                    fill_p = not fill_p
+
+                pdf_p_output = pdf_p.output()
+                c_ex4.download_button(
+                    label="🔍 Pełny PDF (Poziom)",
+                    data=bytes(pdf_p_output),
+                    file_name=f"raport_pelny_poziom_{date.today()}.pdf",
+                    mime="application/pdf",
+                    use_container_width=True,
+                    type="primary"
+                )
+            except Exception as e:
+                c_ex4.error(f"Blad Pełny PDF: {e}")
         else:
             st.info("Brak danych do raportu.")
 
@@ -889,9 +1019,8 @@ else:
 
         st.markdown("### 📊 Raportowanie")
         st.markdown("- **Wyszukiwarka:** Filtruj wydatki wedlug dat, osob, metod platnosci czy statusu rozliczenia.")
-        st.markdown("- **Eksport do Excela dla księgowości:** Generuje czytelny arkusz dla biura rachunkowego z podstawowymi danymi rozliczeniowymi.")
-        st.markdown("- **Pełny Raport Excel (Wewnętrzny):** Eksportuje kompletne dane dotyczące zakupu (w tym odbierającego, płacącego, źródło środków, miejsce zakupu oraz klikalne linki do dołączonych skanów/zdjęć).")
-        st.markdown("- **Eksport do PDF:** Tworzy zwarty, pionowy raport z ukladem zebry.")
+        st.markdown("- **Eksporty dla Księgowości:** Służą do szybkiego przekazania podsumowania do księgowej (PDF Pionowy lub Excel).")
+        st.markdown("- **Wewnętrzny Pełny Raport PDF (Poziomy):** Zawiera wszystkie szczegółowe dane (w tym płatnika, odbiorcę, miejsce zakupu i projekt) zachowując elegancki układ.")
 
         st.info("**💡 Wazna zasada:** Wszystkie wydatki, ktorym nadasz status *'Rozliczone z Marzeną ✅'*, automatycznie przestaja byc wliczane do sumy w polu *'Do zwrotu'* w module raportowym.")
         st.info("**🔐 Wygoda logowania:** Aplikacja probuje utrzymac logowanie po zwyklym odswiezeniu strony. Pelne wylogowanie nastapi po kliknieciu `Wyloguj` albo po wyczyszczeniu danych przegladarki.")
