@@ -3,3 +3,5 @@ supabase
 pandas
 xlsxwriter
 fpdf2
+pytesseract
+Pillow
