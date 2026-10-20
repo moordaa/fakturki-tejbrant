@@ -186,7 +186,7 @@ def analizuj_dokument_ocr(image_bytes):
             img = Image.open(io.BytesIO(image_bytes))
             tekst = pytesseract.image_to_string(img)
         except Exception:
-            return wyniki, "Nie zainstalowano pakietu Tesseract w środowisku. Zainstaluj pytesseract / tesseract-ocr."
+            return wyniki, "Brak zainstalowanego silnika Tesseract OCR na serwerze."
 
     if not tekst.strip():
         return wyniki, "Nie udało się odczytać tekstu ze zdjęcia."
@@ -208,7 +208,7 @@ def analizuj_dokument_ocr(image_bytes):
         except Exception:
             pass
 
-    # 2. Szukanie kwoty brutto (np. SUMA, PLN, ZŁ, BRUTTO)
+    # 2. Szukanie kwoty brutto
     dane_kwoty = re.findall(r'(?:SUMA|BRUTTO|PLN|ZŁ|RAZEM)\s*[:=]?\s*(\d+[\.,]\d{2})', tekst, re.IGNORECASE)
     if not dane_kwoty:
         dane_kwoty = re.findall(r'\b(\d+[\.,]\d{2})\b', tekst)
@@ -223,7 +223,7 @@ def analizuj_dokument_ocr(image_bytes):
         if kwoty_float:
             wyniki["kwota"] = max(kwoty_float)
 
-    # 3. Szukanie nazwy sklepu (pierwsza niepusta linijka)
+    # 3. Szukanie nazwy sklepu (pierwsza linijka)
     linie = [line.strip() for line in tekst.split('\n') if line.strip() and len(line.strip()) > 2]
     if linie:
         wyniki["sklep"] = linie[0][:40]
@@ -378,8 +378,11 @@ else:
             elif opcja_dok == "📷 Zdjecie":
                 foto = st.camera_input("Zrob zdjecie")
 
-            # --- PRZYCISK ODZYTANIA OCR ---
-            if (plik_u or foto) and not plik_u.name.lower().endswith('.pdf') if plik_u else True:
+            # --- POPRAWIONY BEZPIECZNY WARUNEK DLA OCR ---
+            jest_plik = plik_u is not None or foto is not None
+            jest_pdf = plik_u is not None and plik_u.name.lower().endswith('.pdf')
+
+            if jest_plik and not jest_pdf:
                 if st.button("🤖 Odczytaj dane z dokumentu (OCR)", type="secondary"):
                     b_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
                     with st.spinner("Skanowanie dokumentu i odczytywanie danych..."):
@@ -422,7 +425,6 @@ else:
                             "miesiac_rok": miesiac_rok
                         }).execute()
 
-                        # Czyszczenie pamięci podręcznej OCR
                         for k in ["ocr_sklep", "ocr_kwota", "ocr_data"]:
                             if k in st.session_state:
                                 del st.session_state[k]
