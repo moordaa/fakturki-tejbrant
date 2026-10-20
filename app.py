@@ -170,9 +170,6 @@ def wgraj_dokument_do_supabase(plik_u=None, foto=None):
 
 
 def analizuj_dokument_ocr(image_bytes):
-    """
-    Funkcja OCR próbuje odczytać tekst ze zdjęcia i wyciągnąć kwotę, datę oraz sklep.
-    """
     wyniki = {"sklep": "", "kwota": 0.0, "data": None}
     tekst = ""
     
@@ -186,12 +183,12 @@ def analizuj_dokument_ocr(image_bytes):
             img = Image.open(io.BytesIO(image_bytes))
             tekst = pytesseract.image_to_string(img)
         except Exception:
-            return wyniki, "Brak zainstalowanego silnika Tesseract OCR na serwerze."
+            return wyniki, "Brak zainstalowanego silnika Tesseract OCR w systemie."
 
     if not tekst.strip():
         return wyniki, "Nie udało się odczytać tekstu ze zdjęcia."
 
-    # 1. Szukanie daty (YYYY-MM-DD lub DD.MM.YYYY)
+    # 1. Szukanie daty
     dane_daty = re.findall(r'\b(20\d{2}[-/.](?:0[1-9]|1[0-2])[-/.](?:0[1-9]|[12]\d|3[01]))\b', tekst)
     if not dane_daty:
         dane_daty = re.findall(r'\b((?:0[1-9]|[12]\d|3[01])[-/.](?:0[1-9]|1[0-2])[-/.](?:20)?\d{2})\b', tekst)
@@ -223,7 +220,7 @@ def analizuj_dokument_ocr(image_bytes):
         if kwoty_float:
             wyniki["kwota"] = max(kwoty_float)
 
-    # 3. Szukanie nazwy sklepu (pierwsza linijka)
+    # 3. Szukanie nazwy sklepu
     linie = [line.strip() for line in tekst.split('\n') if line.strip() and len(line.strip()) > 2]
     if linie:
         wyniki["sklep"] = linie[0][:40]
@@ -378,23 +375,25 @@ else:
             elif opcja_dok == "📷 Zdjecie":
                 foto = st.camera_input("Zrob zdjecie")
 
-            # --- POPRAWIONY BEZPIECZNY WARUNEK DLA OCR ---
-            jest_plik = plik_u is not None or foto is not None
-            jest_pdf = plik_u is not None and plik_u.name.lower().endswith('.pdf')
-
-            if jest_plik and not jest_pdf:
+            # --- WIDOCZNY PRZYCISK OCR Z WALIDACJĄ ---
+            if opcja_dok in ["📁 Wgraj plik", "📷 Zdjecie"]:
                 if st.button("🤖 Odczytaj dane z dokumentu (OCR)", type="secondary"):
-                    b_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
-                    with st.spinner("Skanowanie dokumentu i odczytywanie danych..."):
-                        res_ocr, msg = analizuj_dokument_ocr(b_bytes)
-                        if res_ocr.get("sklep"):
-                            st.session_state["ocr_sklep"] = res_ocr["sklep"]
-                        if res_ocr.get("kwota"):
-                            st.session_state["ocr_kwota"] = res_ocr["kwota"]
-                        if res_ocr.get("data"):
-                            st.session_state["ocr_data"] = res_ocr["data"]
-                        st.toast(f"ℹ️ {msg}")
-                        st.rerun()
+                    if not plik_u and not foto:
+                        st.warning("⚠️ Najpierw dodaj plik lub zrób zdjęcie!")
+                    elif plik_u and plik_u.name.lower().endswith('.pdf'):
+                        st.warning("⚠️ Funkcja OCR obsługuje pliki graficzne (JPG, PNG). Dla plików PDF uzupełnij dane ręcznie.")
+                    else:
+                        b_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
+                        with st.spinner("Skanowanie dokumentu i odczytywanie danych..."):
+                            res_ocr, msg = analizuj_dokument_ocr(b_bytes)
+                            if res_ocr.get("sklep"):
+                                st.session_state["ocr_sklep"] = res_ocr["sklep"]
+                            if res_ocr.get("kwota"):
+                                st.session_state["ocr_kwota"] = res_ocr["kwota"]
+                            if res_ocr.get("data"):
+                                st.session_state["ocr_data"] = res_ocr["data"]
+                            st.toast(f"ℹ️ {msg}")
+                            st.rerun()
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
                 if sklep and sklep != "Brak podpowiedzi":
@@ -1125,7 +1124,7 @@ else:
 
         st.markdown("### ➕ Dodawanie wydatkow")
         st.markdown("- **Podpowiedzi:** Przy polach Sklep, Kto odebral, Kto zaplacil i Projekt aplikacja pokazuje wartosci uzyte juz wczesniej. Kliknij pole i zacznij pisac pierwsze litery, aby szybciej znalezc wpis.")
-        st.markdown("- **Skanowanie OCR:** Po wybraniu pliku lub zrobieniu zdjęcia możesz kliknąć przycisk `🤖 Odczytaj dane z dokumentu (OCR)`, aby system sam uzupełnił kwotę, datę i nazwę sklepu.")
+        st.markdown("- **Skanowanie OCR:** Po wybraniu opcji dodawania dokumentu kliknij przycisk `🤖 Odczytaj dane z dokumentu (OCR)`, aby system automatycznie odczytał kwotę, datę i nazwę sklepu.")
         st.markdown("- **Dokumenty:** Uzywaj aparatu telefonu do szybkiego skanowania paragonow lub wgrywaj gotowe pliki PDF/JPG z komputera.")
         st.markdown("- **Braki w danych:** Jesli w momencie dodawania nie znasz dokladnej kwoty lub daty, zaznacz okienka *'Brak daty'* lub *'Nie znam kwoty'*. System wstawi znak `?`, co ulatwi pozniejsze uzupelnienie danych.")
 
