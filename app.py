@@ -375,25 +375,39 @@ else:
             elif opcja_dok == "📷 Zdjecie":
                 foto = st.camera_input("Zrob zdjecie")
 
-            # --- WIDOCZNY PRZYCISK OCR Z WALIDACJĄ ---
-            if opcja_dok in ["📁 Wgraj plik", "📷 Zdjecie"]:
-                if st.button("🤖 Odczytaj dane z dokumentu (OCR)", type="secondary"):
-                    if not plik_u and not foto:
-                        st.warning("⚠️ Najpierw dodaj plik lub zrób zdjęcie!")
-                    elif plik_u and plik_u.name.lower().endswith('.pdf'):
-                        st.warning("⚠️ Funkcja OCR obsługuje pliki graficzne (JPG, PNG). Dla plików PDF uzupełnij dane ręcznie.")
-                    else:
-                        b_bytes = plik_u.getvalue() if plik_u else foto.getvalue()
-                        with st.spinner("Skanowanie dokumentu i odczytywanie danych..."):
-                            res_ocr, msg = analizuj_dokument_ocr(b_bytes)
-                            if res_ocr.get("sklep"):
-                                st.session_state["ocr_sklep"] = res_ocr["sklep"]
-                            if res_ocr.get("kwota"):
-                                st.session_state["ocr_kwota"] = res_ocr["kwota"]
-                            if res_ocr.get("data"):
-                                st.session_state["ocr_data"] = res_ocr["data"]
-                            st.toast(f"ℹ️ {msg}")
-                            st.rerun()
+            # --- BUFOROWANIE BAJTÓW DOKUMENTU W SESJI (OCHRONA PRZED ZNIKANIEM ZDJĘCIA Z APARATU) ---
+            if plik_u is not None:
+                st.session_state["akt_dokument_bytes"] = plik_u.getvalue()
+                st.session_state["akt_dokument_typ"] = "pdf" if plik_u.name.lower().endswith('.pdf') else "img"
+            elif foto is not None:
+                st.session_state["akt_dokument_bytes"] = foto.getvalue()
+                st.session_state["akt_dokument_typ"] = "img"
+            elif opcja_dok == "Brak":
+                st.session_state.pop("akt_dokument_bytes", None)
+                st.session_state.pop("akt_dokument_typ", None)
+
+            st.markdown("---")
+
+            # --- PRZYCISK OCR ZAWSZE WIDOCZNY ---
+            if st.button("🤖 Odczytaj dane z dokumentu (OCR)", type="secondary", use_container_width=True):
+                b_bytes = st.session_state.get("akt_dokument_bytes")
+                d_typ = st.session_state.get("akt_dokument_typ")
+
+                if not b_bytes:
+                    st.warning("⚠️ Najpierw zrób zdjęcie aparatem lub wgraj plik z dysku!")
+                elif d_typ == "pdf":
+                    st.warning("⚠️ Funkcja OCR obsługuje pliki graficzne (JPG, PNG). Dla plików PDF wpisz dane ręcznie.")
+                else:
+                    with st.spinner("Skanowanie zdjęcia i odczytywanie danych..."):
+                        res_ocr, msg = analizuj_dokument_ocr(b_bytes)
+                        if res_ocr.get("sklep"):
+                            st.session_state["ocr_sklep"] = res_ocr["sklep"]
+                        if res_ocr.get("kwota"):
+                            st.session_state["ocr_kwota"] = res_ocr["kwota"]
+                        if res_ocr.get("data"):
+                            st.session_state["ocr_data"] = res_ocr["data"]
+                        st.toast(f"ℹ️ {msg}")
+                        st.rerun()
 
             if st.button("ZAPISZ WYDATEK", type="primary", use_container_width=True):
                 if sklep and sklep != "Brak podpowiedzi":
@@ -424,7 +438,7 @@ else:
                             "miesiac_rok": miesiac_rok
                         }).execute()
 
-                        for k in ["ocr_sklep", "ocr_kwota", "ocr_data"]:
+                        for k in ["ocr_sklep", "ocr_kwota", "ocr_data", "akt_dokument_bytes", "akt_dokument_typ"]:
                             if k in st.session_state:
                                 del st.session_state[k]
 
@@ -1124,7 +1138,7 @@ else:
 
         st.markdown("### ➕ Dodawanie wydatkow")
         st.markdown("- **Podpowiedzi:** Przy polach Sklep, Kto odebral, Kto zaplacil i Projekt aplikacja pokazuje wartosci uzyte juz wczesniej. Kliknij pole i zacznij pisac pierwsze litery, aby szybciej znalezc wpis.")
-        st.markdown("- **Skanowanie OCR:** Po wybraniu opcji dodawania dokumentu kliknij przycisk `🤖 Odczytaj dane z dokumentu (OCR)`, aby system automatycznie odczytał kwotę, datę i nazwę sklepu.")
+        st.markdown("- **Skanowanie OCR:** Kliknij przycisk `🤖 Odczytaj dane z dokumentu (OCR)`, aby system automatycznie spróbował odczytać kwotę, datę i nazwę sklepu z dodanego zdjęcia.")
         st.markdown("- **Dokumenty:** Uzywaj aparatu telefonu do szybkiego skanowania paragonow lub wgrywaj gotowe pliki PDF/JPG z komputera.")
         st.markdown("- **Braki w danych:** Jesli w momencie dodawania nie znasz dokladnej kwoty lub daty, zaznacz okienka *'Brak daty'* lub *'Nie znam kwoty'*. System wstawi znak `?`, co ulatwi pozniejsze uzupelnienie danych.")
 
